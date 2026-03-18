@@ -15,10 +15,23 @@ sub doFetch()
     http.InitClientCertificates()
     http.EnableEncodings(true)
 
-    result = http.GetToString()
-    if result <> invalid
-        m.top.response = result
+    method = "GET"
+    if req.method <> invalid then method = req.method
+
+    if method = "POST"
+        http.addHeader("Content-Type", "application/json")
+        body = ""
+        if req.body <> invalid then body = req.body
+        result = http.PostFromString(body)
+        ' PostFromString returns response code, need AsyncPostFromString for body
+        ' Use GetToString pattern with roUrlEvent instead
+        m.top.response = str(result)
     else
-        m.top.response = ""
+        result = http.GetToString()
+        if result <> invalid
+            m.top.response = result
+        else
+            m.top.response = ""
+        end if
     end if
 end sub

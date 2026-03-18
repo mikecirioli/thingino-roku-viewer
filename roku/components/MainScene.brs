@@ -21,13 +21,17 @@ sub init()
     m.previewLabel = m.top.findNode("previewLabel")
     m.previewTimer = m.top.findNode("previewTimer")
 
-    ' Camera data: array of {name, hasSnapshot, stream, streamType}
+    m.ptzOverlay = m.top.findNode("ptzOverlay")
+    m.ptzBadge = m.top.findNode("ptzBadge")
+
+    ' Camera data: array of {name, hasSnapshot, stream, streamType, ptz}
     m.cameras = []
     m.currentCamera = -1
     m.previewMode = "poster" ' "poster" or "video"
 
     ' Fullscreen state
     m.fullscreen = false
+    m.ptzActive = false  ' true if current fullscreen camera has PTZ
 
     m.cameraList.observeField("itemFocused", "onCameraFocused")
     m.previewTimer.observeField("fire", "onPreviewRefresh")
@@ -66,7 +70,7 @@ sub onCameraListResponse(event as object)
         item.title = name
 
         ' Store camera data (info will be fetched on focus)
-        cam = { name: name, hasSnapshot: true, stream: "", streamType: "" }
+        cam = { name: name, hasSnapshot: true, stream: "", streamType: "", ptz: false }
         m.cameras.push(cam)
 
         nextCam:
@@ -106,17 +110,21 @@ sub onCameraInfoResponse(event as object)
             m.cameras[i].hasSnapshot = info.snapshot
             m.cameras[i].stream = info.stream
             m.cameras[i].streamType = info.stream_type
+            m.cameras[i].ptz = (info.ptz = true)
 
             ' Update list item description
             content = m.cameraListContent.getChild(i)
             if content <> invalid
+                desc = ""
                 if info.stream <> "" and info.snapshot
-                    content.description = "snapshot + " + info.stream_type
+                    desc = "snapshot + " + info.stream_type
                 else if info.stream <> ""
-                    content.description = info.stream_type + " stream"
+                    desc = info.stream_type + " stream"
                 else
-                    content.description = "snapshot"
+                    desc = "snapshot"
                 end if
+                if info.ptz = true then desc = desc + " + PTZ"
+                content.description = desc
             end if
 
             ' If this is the currently focused camera, update preview
@@ -195,11 +203,19 @@ sub enterFullscreen()
     m.previewPoster.height = 1080
     m.previewVideo.width = 1920
     m.previewVideo.height = 1080
-    m.top.findNode("previewGroup").findNode("previewPoster").width = 1920
+
+    ' Show PTZ overlay if camera supports it
+    m.ptzActive = cam.ptz
+    m.ptzOverlay.visible = cam.ptz
 end sub
 
 sub exitFullscreen()
     m.fullscreen = false
+
+    ' Stop any PTZ movement
+    if m.ptzActive then sendPtzCommand("stop", "")
+    m.ptzActive = false
+    m.ptzOverlay.visible = false
 
     ' Restore UI
     m.cameraList.visible = true
@@ -218,16 +234,75 @@ sub exitFullscreen()
     m.cameraList.setFocus(true)
 end sub
 
-function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
+sub sendPtzCommand(action as string, direction as string)
+    if m.currentCamera < 0 then return
+    cam = m.cameras[m.currentCamera]
+    body = ""
+    if action = "move"
+        body = FormatJSON({ action: "move", direction: direction, speed: 0.5 })
+    else
+        body = FormatJSON({ action: "stop" })
+    end if
 
-    if m.fullscreen
+    task = CreateObject("roSGNode", "HttpTask")
+    task.request = {
+        url: m.SERVER_URL + "/camera/" + cam.name + "/ptz",
+        method: "POST",
+        body: body
+    }
+    task.control = "run"
+    ' Fire-and-forget — no response observer needed
+end sub
+
+sub highlightPtzArrow(direction as string, on as boolean)
+    color = "#FFFFFF44"
+    if on then color = "#44FF44FF"
+    if direction = "up" then m.top.findNode("ptzUp").color = color
+    if direction = "down" then m.top.findNode("ptzDown").color = color
+    if direction = "left" then m.top.findNode("ptzLeft").color = color
+    if direction = "right" then m.top.findNode("ptzRight").color = color
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    ' -- Fullscreen mode with PTZ --
+    if m.fullscreen and m.ptzActive
+        ptzDirection = ""
+        if key = "up" then ptzDirection = "up"
+        if key = "down" then ptzDirection = "down"
+        if key = "left" then ptzDirection = "left"
+        if key = "right" then ptzDirection = "right"
+        if key = "fastforward" then ptzDirection = "zoomIn"
+        if key = "rewind" then ptzDirection = "zoomOut"
+
+        if ptzDirection <> ""
+            if press
+                sendPtzCommand("move", ptzDirection)
+                highlightPtzArrow(ptzDirection, true)
+            else
+                sendPtzCommand("stop", "")
+                highlightPtzArrow(ptzDirection, false)
+            end if
+            return true
+        end if
+
         if key = "back"
+            if press then exitFullscreen()
+            return true
+        end if
+        return false
+    end if
+
+    ' -- Fullscreen mode without PTZ --
+    if m.fullscreen
+        if key = "back" and press
             exitFullscreen()
             return true
         end if
         return false
     end if
+
+    ' -- Normal (list) mode --
+    if not press then return false
 
     if key = "OK"
         enterFullscreen()
@@ -235,9 +310,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "options"
-        ' Open settings (create SettingsScene in a new screen)
-        ' For now, just show a hint — settings are accessible via
-        ' the Roku screensaver settings menu
         return true
     end if
 

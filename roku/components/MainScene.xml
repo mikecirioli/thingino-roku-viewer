@@ -42,6 +42,43 @@
           <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
         </Label>
       </Group>
+
+      <!-- PTZ overlay (visible in fullscreen when camera has PTZ) -->
+      <Group id="ptzOverlay" visible="false">
+        <!-- Direction arrows -->
+        <Label id="ptzUp" text="^" color="#FFFFFFAA"
+               translation="[930,40]" horizAlign="center" width="60">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="40" />
+        </Label>
+        <Label id="ptzDown" text="v" color="#FFFFFFAA"
+               translation="[930,990]" horizAlign="center" width="60">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="40" />
+        </Label>
+        <Label id="ptzLeft" text="<" color="#FFFFFFAA"
+               translation="[40,510]" horizAlign="center" width="60">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="40" />
+        </Label>
+        <Label id="ptzRight" text=">" color="#FFFFFFAA"
+               translation="[1820,510]" horizAlign="center" width="60">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="40" />
+        </Label>
+        <!-- PTZ badge -->
+        <Group translation="[1700,40]">
+          <Rectangle width="160" height="36" color="#000000AA" cornerRadius="8" />
+          <Label id="ptzBadge" text="PTZ" color="#44FF44"
+                 translation="[12,6]" width="136" horizAlign="center">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+        </Group>
+        <!-- Zoom hint -->
+        <Group translation="[1700,1000]">
+          <Rectangle width="160" height="36" color="#000000AA" cornerRadius="8" />
+          <Label text="Rew/FF = Zoom" color="#FFFFFFAA"
+                 translation="[8,6]" width="144" horizAlign="center">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="12" />
+          </Label>
+        </Group>
+      </Group>
     </Group>
 
     <!-- Loading indicator -->

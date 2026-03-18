@@ -13,7 +13,8 @@ Endpoints:
   /random?w=1280&h=800  Resize on the fly (requires Pillow)
   /camera/list   JSON array of available camera names
   /camera/<name> JPEG snapshot (optional ?w=&h= resize)
-  /camera/<name>/info  JSON: {name, snapshot, stream, stream_type}
+  /camera/<name>/info  JSON: {name, snapshot, stream, stream_type, ptz}
+  /camera/<name>/ptz   POST: PTZ control (ONVIF) — {action, direction, speed}
   /frigate/*     Proxy to Frigate API (requires FRIGATE_URL env var, adds CORS headers)
   /ha/weather    Plain text: current weather summary
   /ha/forecast   Plain text: 3-day forecast
@@ -43,6 +44,11 @@ cameras.yaml format:
         type: a_secure_password
         username: admin
         password: password456
+      onvif:                    # optional: enables PTZ controls
+        host: 192.168.1.106
+        port: 80
+        username: a_secure_password
+        password: a_secure_password
 
 Environment variables:
   PHOTO_DIR      Directory containing images (default: /media)
@@ -399,6 +405,7 @@ def camera_info(name):
         "snapshot": bool(cam.get("snapshot")),
         "stream": cam.get("stream", ""),
         "stream_type": cam.get("stream_type", "hls") if cam.get("stream") else "",
+        "ptz": bool(cam.get("onvif")),
     }
 
 
@@ -415,6 +422,182 @@ def _resize_jpeg(data, max_w, max_h):
         return buf.getvalue(), "image/jpeg"
     except ImportError:
         return data, "image/jpeg"
+
+
+# ── ONVIF PTZ ─────────────────────────────────────────────
+# Raw SOAP implementation — no external dependencies.
+# Supports ContinuousMove (pan/tilt/zoom) and Stop.
+# WSSE UsernameToken (Digest) authentication.
+
+import hashlib
+import base64
+from datetime import datetime, timezone
+
+_PTZ_NS = "http://www.onvif.org/ver20/ptz/wsdl"
+_MEDIA_NS = "http://www.onvif.org/ver10/media/wsdl"
+_SCHEMA_NS = "http://www.onvif.org/ver10/schema"
+_SOAP_NS = "http://www.w3.org/2003/05/soap-envelope"
+_WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+_WSU_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
+_PASSWORD_TYPE = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest"
+
+
+def _wsse_header(username, password):
+    """Build WSSE UsernameToken (Digest) SOAP header."""
+    nonce_raw = os.urandom(16)
+    nonce_b64 = base64.b64encode(nonce_raw).decode()
+    created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    digest_raw = hashlib.sha1(nonce_raw + created.encode() + password.encode()).digest()
+    digest_b64 = base64.b64encode(digest_raw).decode()
+    return """<wsse:Security xmlns:wsse="{wsse}" xmlns:wsu="{wsu}">
+      <wsse:UsernameToken>
+        <wsse:Username>{user}</wsse:Username>
+        <wsse:Password Type="{ptype}">{digest}</wsse:Password>
+        <wsse:Nonce>{nonce}</wsse:Nonce>
+        <wsu:Created>{created}</wsu:Created>
+      </wsse:UsernameToken>
+    </wsse:Security>""".format(
+        wsse=_WSSE_NS, wsu=_WSU_NS, user=username,
+        ptype=_PASSWORD_TYPE, digest=digest_b64,
+        nonce=nonce_b64, created=created
+    )
+
+
+def _soap_envelope(header_xml, body_xml):
+    """Wrap header + body in a SOAP envelope."""
+    return """<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="{soap}">
+  <s:Header>{header}</s:Header>
+  <s:Body>{body}</s:Body>
+</s:Envelope>""".format(soap=_SOAP_NS, header=header_xml, body=body_xml)
+
+
+class OnvifPtz:
+    """ONVIF PTZ controller using raw SOAP calls."""
+
+    def __init__(self, host, port, username, password):
+        self._host = host
+        self._port = port
+        self._user = username
+        self._pass = password
+        self._profile_token = None
+
+    def _url(self, service):
+        return "http://{}:{}/onvif/{}".format(self._host, self._port, service)
+
+    def _call(self, service, body_xml):
+        """Send a SOAP request, return response body text."""
+        header = _wsse_header(self._user, self._pass)
+        envelope = _soap_envelope(header, body_xml)
+        data = envelope.encode("utf-8")
+        req = Request(self._url(service), data=data, method="POST")
+        req.add_header("Content-Type", "application/soap+xml; charset=utf-8")
+        try:
+            resp = urlopen(req, timeout=5)
+            return resp.read().decode("utf-8")
+        except Exception as e:
+            return None
+
+    def _get_profile_token(self):
+        """Fetch the first media profile token."""
+        if self._profile_token:
+            return self._profile_token
+        body = '<trt:GetProfiles xmlns:trt="{}"/>'.format(_MEDIA_NS)
+        resp = self._call("media_service", body)
+        if not resp:
+            return None
+        # Simple XML parse — find first token attribute
+        import re
+        m = re.search(r'<[^>]*Profiles[^>]*\btoken="([^"]+)"', resp)
+        if m:
+            self._profile_token = m.group(1)
+            return self._profile_token
+        return None
+
+    def continuous_move(self, pan=0.0, tilt=0.0, zoom=0.0):
+        """Start continuous pan/tilt/zoom movement."""
+        token = self._get_profile_token()
+        if not token:
+            return False
+        body = """<tptz:ContinuousMove xmlns:tptz="{ptz}" xmlns:tt="{schema}">
+          <tptz:ProfileToken>{token}</tptz:ProfileToken>
+          <tptz:Velocity>
+            <tt:PanTilt x="{pan}" y="{tilt}"/>
+            <tt:Zoom x="{zoom}"/>
+          </tptz:Velocity>
+        </tptz:ContinuousMove>""".format(
+            ptz=_PTZ_NS, schema=_SCHEMA_NS, token=token,
+            pan=pan, tilt=tilt, zoom=zoom
+        )
+        return self._call("ptz_service", body) is not None
+
+    def stop(self):
+        """Stop all PTZ movement."""
+        token = self._get_profile_token()
+        if not token:
+            return False
+        body = """<tptz:Stop xmlns:tptz="{ptz}">
+          <tptz:ProfileToken>{token}</tptz:ProfileToken>
+          <tptz:PanTilt>true</tptz:PanTilt>
+          <tptz:Zoom>true</tptz:Zoom>
+        </tptz:Stop>""".format(ptz=_PTZ_NS, token=token)
+        return self._call("ptz_service", body) is not None
+
+    def move(self, direction, speed=0.5):
+        """Convenience: start moving in a named direction."""
+        dirs = {
+            "left":     (-speed, 0, 0),
+            "right":    (speed, 0, 0),
+            "up":       (0, speed, 0),
+            "down":     (0, -speed, 0),
+            "zoomIn":   (0, 0, speed),
+            "zoomOut":  (0, 0, -speed),
+        }
+        vals = dirs.get(direction)
+        if not vals:
+            return False
+        return self.continuous_move(*vals)
+
+
+_ptz_controllers = {}
+_ptz_lock = threading.Lock()
+
+
+def get_ptz(name):
+    """Get or create an OnvifPtz controller for a camera. Returns None if no ONVIF config."""
+    cam = _CAMERAS.get(name, {})
+    onvif = cam.get("onvif")
+    if not onvif:
+        return None
+    with _ptz_lock:
+        ctrl = _ptz_controllers.get(name)
+        if ctrl is None:
+            ctrl = OnvifPtz(
+                onvif.get("host", ""),
+                onvif.get("port", 80),
+                onvif.get("username", "admin"),
+                onvif.get("password", ""),
+            )
+            _ptz_controllers[name] = ctrl
+        return ctrl
+
+
+def handle_ptz(name, body):
+    """Handle a PTZ command. body is parsed JSON: {action, direction, speed}."""
+    ctrl = get_ptz(name)
+    if not ctrl:
+        return False, "No ONVIF config for camera: {}".format(name)
+    action = body.get("action", "")
+    if action == "move":
+        direction = body.get("direction", "")
+        speed = float(body.get("speed", 0.5))
+        ok = ctrl.move(direction, speed)
+        return ok, "" if ok else "Move failed"
+    elif action == "stop":
+        ok = ctrl.stop()
+        return ok, "" if ok else "Stop failed"
+    else:
+        return False, "Unknown action: {}".format(action)
 
 
 # ── HA data cache ─────────────────────────────────────────
@@ -758,6 +941,23 @@ class PhotoHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def do_OPTIONS(self):
+        """Handle CORS preflight for POST endpoints."""
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if path.endswith("/ptz") and path.startswith("/camera/"):
+            self.handle_ptz_request(path)
+        else:
+            self.send_error(404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
@@ -834,6 +1034,32 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def handle_ptz_request(self, path):
+        """Handle POST /camera/<name>/ptz — PTZ control."""
+        name = path[len("/camera/"):].rsplit("/ptz", 1)[0]
+        content_len = int(self.headers.get("Content-Length", 0))
+        if content_len > 0:
+            raw = self.rfile.read(content_len)
+            try:
+                body = json.loads(raw)
+            except json.JSONDecodeError:
+                self.send_error(400, "Invalid JSON")
+                return
+        else:
+            body = {}
+        ok, err = handle_ptz(name, body)
+        if ok:
+            resp = json.dumps({"ok": True}).encode()
+            self.send_response(200)
+        else:
+            resp = json.dumps({"ok": False, "error": err}).encode()
+            self.send_response(400 if "Unknown" in err else 502)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
 
     def serve_camera(self, path, parsed):
         name = path[len("/camera/"):]
