@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<!-- https://creativecommons.org/licenses/by-nc-sa/4.0/ -->
+<component name="SettingsScene" extends="Scene">
+  <children>
+    <Rectangle width="1920" height="1080" color="#1a1a2e" />
+
+    <LayoutGroup translation="[200,80]" layoutDirection="vert" itemSpacings="[20]">
+      <Label id="title" text="3 Bad Dogs Screensaver Settings"
+             color="#FFFFFF" />
+
+      <Label text="Screensaver Mode:" color="#AAAAAA" />
+      <RadioButtonList id="modeList" focusable="true">
+        <ContentNode role="content">
+          <ContentNode title="Photo Frame - random photos with crossfade" />
+          <ContentNode title="Camera - cycle all cameras" />
+        </ContentNode>
+      </RadioButtonList>
+
+      <Label id="loading" text="Loading cameras..."
+             color="#666666" visible="false" />
+
+      <Rectangle width="600" height="1" color="#FFFFFF33" />
+
+      <Label text="Photo Interval (seconds):" color="#AAAAAA" />
+      <RadioButtonList id="photoIntervalList" focusable="true">
+        <ContentNode role="content">
+          <ContentNode title="15 seconds" />
+          <ContentNode title="30 seconds" />
+          <ContentNode title="60 seconds" />
+          <ContentNode title="120 seconds" />
+        </ContentNode>
+      </RadioButtonList>
+
+      <Label text="Camera Cycle Interval (seconds):" color="#AAAAAA" />
+      <RadioButtonList id="cycleIntervalList" focusable="true">
+        <ContentNode role="content">
+          <ContentNode title="3 seconds" />
+          <ContentNode title="5 seconds" />
+          <ContentNode title="10 seconds" />
+          <ContentNode title="15 seconds" />
+        </ContentNode>
+      </RadioButtonList>
+
+      <Label id="hint" text="Press OK to select, Back to save and exit"
+             color="#666666" />
+    </LayoutGroup>
+  </children>
+
+  <script type="text/brightscript" uri="SettingsScene.brs" />
+</component>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<!-- https://creativecommons.org/licenses/by-nc-sa/4.0/ -->
+<component name="MainScene" extends="Scene">
+  <children>
+    <Rectangle width="1920" height="1080" color="#0a0a1a" />
+
+    <!-- Header -->
+    <LayoutGroup translation="[60,40]" layoutDirection="vert" itemSpacings="[8]">
+      <Label id="appTitle" text="3 Bad Dogs" color="#FFFFFF" />
+      <Label id="appSubtitle" text="Select a camera" color="#888888">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+      </Label>
+    </LayoutGroup>
+
+    <!-- Camera list (left side) -->
+    <MarkupList id="cameraList" translation="[60,140]"
+                itemSize="[400,60]" numRows="12"
+                drawFocusFeedback="true"
+                focusBitmapBlendColor="#3366FF"
+                itemComponentName="CameraListItem">
+      <ContentNode id="cameraListContent" role="content" />
+    </MarkupList>
+
+    <!-- Preview area (right side) -->
+    <Group id="previewGroup" translation="[520,140]">
+      <Rectangle width="1340" height="754" color="#000000" />
+
+      <!-- Poster preview (for snapshot cameras) -->
+      <Poster id="previewPoster" width="1340" height="754"
+              translation="[0,0]" loadDisplayMode="scaleToFit" visible="true" />
+
+      <!-- Video preview (for HLS stream cameras) -->
+      <Video id="previewVideo" width="1340" height="754"
+             translation="[0,0]" visible="false" />
+
+      <!-- Camera name overlay -->
+      <Group translation="[20,700]">
+        <Rectangle width="300" height="40" color="#000000AA" cornerRadius="8" />
+        <Label id="previewLabel" text="" color="#FFFFFF"
+               translation="[12,8]">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+      </Group>
+    </Group>
+
+    <!-- Loading indicator -->
+    <Label id="loadingLabel" text="Loading cameras..."
+           translation="[860,500]" color="#666666" visible="true" />
+
+    <!-- Hint bar -->
+    <Label id="hintBar" text="OK = Fullscreen    *  = Settings    Back = Exit"
+           translation="[60,920]" color="#555555">
+      <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
+    </Label>
+
+    <!-- Refresh timer for poster preview -->
+    <Timer id="previewTimer" repeat="true" duration="1" />
+  </children>
+
+  <script type="text/brightscript" uri="MainScene.brs" />
+</component>

@@ -1,0 +1,15 @@
+# Secrets
+cameras.yaml
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Roku build artifacts
+*.zip
+out/
+
+# OS
+.DS_Store
+Thumbs.db
