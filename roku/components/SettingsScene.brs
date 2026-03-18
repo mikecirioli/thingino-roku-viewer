@@ -15,10 +15,14 @@ sub init()
     ' Cycle interval values
     m.cycleIntervalValues = [3, 5, 10, 15]
 
+    ' Track pending camera info requests
+    m.pendingInfoCount = 0
+    m.cameraInfoMap = {}  ' name -> {stream, streamType}
+
     ' Load saved settings
     sec = CreateObject("roRegistrySection", "settings")
     m.savedMode = sec.Read("mode")
-    if m.savedMode <> "camera" then m.savedMode = "photo"
+    if m.savedMode <> "camera" and m.savedMode <> "video" then m.savedMode = "photo"
     m.savedCamera = sec.Read("camera")
     if m.savedCamera = "" then m.savedCamera = "cycle"
 
@@ -76,22 +80,32 @@ end sub
 
 sub onCameraListResponse(event as object)
     text = event.getData()
-    m.loading.visible = false
-    if text = invalid or text = "" then return
+    if text = invalid or text = "" then
+        m.loading.visible = false
+        return
+    end if
 
     json = ParseJSON(text)
-    if json = invalid or type(json) <> "roArray" then return
+    if json = invalid or type(json) <> "roArray" then
+        m.loading.visible = false
+        return
+    end if
 
-    content = m.modeList.content
-    savedIdx = -1
-
+    ' Build filtered camera name list
+    m.filteredCamNames = []
     for each name in json
         skip = false
         for each bl in m.BLACKLIST
             if LCase(name) = LCase(bl) then skip = true
         end for
-        if skip then goto nextCam
+        if not skip then m.filteredCamNames.push(name)
+    end for
 
+    ' Add snapshot camera options immediately
+    content = m.modeList.content
+    savedIdx = -1
+
+    for each name in m.filteredCamNames
         item = content.createChild("ContentNode")
         item.title = "Camera - " + name
 
@@ -101,8 +115,72 @@ sub onCameraListResponse(event as object)
         if m.savedMode = "camera" and m.savedCamera = name
             savedIdx = m.options.count() - 1
         end if
+    end for
 
-        nextCam:
+    if savedIdx >= 0
+        m.modeList.checkedItem = savedIdx
+    end if
+
+    ' Fetch info for each camera to discover HLS streams
+    m.loading.text = "Checking streams..."
+    m.pendingInfoCount = m.filteredCamNames.count()
+    if m.pendingInfoCount = 0 then
+        m.loading.visible = false
+        return
+    end if
+
+    for each name in m.filteredCamNames
+        fetchCameraInfo(name)
+    end for
+end sub
+
+sub fetchCameraInfo(name as string)
+    ts = CreateObject("roDateTime")
+    url = m.SERVER_URL + "/camera/" + name + "/info?t=" + ts.asSeconds().toStr()
+    task = CreateObject("roSGNode", "HttpTask")
+    task.observeField("response", "onCameraInfoResponse")
+    task.request = { url: url }
+    task.control = "run"
+end sub
+
+sub onCameraInfoResponse(event as object)
+    text = event.getData()
+    m.pendingInfoCount = m.pendingInfoCount - 1
+
+    if text <> invalid and text <> ""
+        info = ParseJSON(text)
+        if info <> invalid and info.stream <> invalid and info.stream <> ""
+            m.cameraInfoMap[info.name] = {
+                stream: info.stream,
+                streamType: info.stream_type
+            }
+        end if
+    end if
+
+    ' Once all info responses are back, add Live Video options
+    if m.pendingInfoCount <= 0
+        m.loading.visible = false
+        addVideoOptions()
+    end if
+end sub
+
+sub addVideoOptions()
+    content = m.modeList.content
+    savedIdx = -1
+
+    for each name in m.filteredCamNames
+        camInfo = m.cameraInfoMap[name]
+        if camInfo <> invalid
+            item = content.createChild("ContentNode")
+            item.title = "Live Video - " + name
+
+            opt = { mode: "video", camera: name }
+            m.options.push(opt)
+
+            if m.savedMode = "video" and m.savedCamera = name
+                savedIdx = m.options.count() - 1
+            end if
+        end if
     end for
 
     if savedIdx >= 0

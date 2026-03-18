@@ -12,6 +12,10 @@
     <Poster id="photoB" width="1920" height="1080"
             translation="[0,0]" loadDisplayMode="scaleToFit" opacity="0.0" />
 
+    <!-- HLS video layer (for live video screensaver mode) -->
+    <Video id="videoPlayer" width="1920" height="1080"
+           translation="[0,0]" visible="false" />
+
     <!-- Floating overlay (bounces for anti-burn-in) -->
     <Group id="overlay" translation="[100,100]">
       <Rectangle id="overlayBg" width="420" height="160"

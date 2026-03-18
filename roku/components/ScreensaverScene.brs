@@ -4,11 +4,12 @@
 ' ============================================================
 ' 3 Bad Dogs Screensaver for Roku
 ' ============================================================
-' Two modes (selectable via screensaver settings):
+' Three modes (selectable via screensaver settings):
 '   "photo"  - random photos with crossfade from server
 '   "camera" - live camera snapshots (near-realtime via a_secure_password)
+'   "video"  - HLS live video from a single camera
 '
-' Both modes share the floating clock overlay with rotating
+' All modes share the floating clock overlay with rotating
 ' data chips (weather, calendar, thermostat, forecast).
 ' ============================================================
 
@@ -30,7 +31,7 @@ sub init()
     ' Read saved settings from registry
     sec = CreateObject("roRegistrySection", "settings")
     m.mode = sec.Read("mode")
-    if m.mode <> "camera" then m.mode = "photo"
+    if m.mode <> "camera" and m.mode <> "video" then m.mode = "photo"
 
     ' Timing from registry (with defaults)
     photoSec = sec.Read("photoInterval")
@@ -55,6 +56,9 @@ sub init()
     m.cameraList = []
     m.cameraIndex = 0
     m.cycleCounter = 0
+
+    ' Video player ref
+    m.videoPlayer = m.top.findNode("videoPlayer")
 
     ' Photo state
     m.front = "a"
@@ -90,37 +94,41 @@ sub init()
 
     ' Timers
     m.photoTimer = m.top.findNode("photoTimer")
-    if m.mode = "camera"
-        m.photoTimer.duration = m.CAMERA_SEC
-    else
-        m.photoTimer.duration = m.PHOTO_SEC
-    end if
-    m.photoTimer.observeField("fire", "onPhotoTimer")
-    m.photoTimer.control = "start"
-
     m.clockTimer = m.top.findNode("clockTimer")
+    m.dataTimer = m.top.findNode("dataTimer")
+    m.bounceTimer = m.top.findNode("bounceTimer")
+
     m.clockTimer.observeField("fire", "onClockTimer")
     m.clockTimer.control = "start"
-
-    m.dataTimer = m.top.findNode("dataTimer")
     m.dataTimer.duration = m.DATA_SEC
     m.dataTimer.observeField("fire", "onDataTimer")
     m.dataTimer.control = "start"
-
-    m.bounceTimer = m.top.findNode("bounceTimer")
     m.bounceTimer.observeField("fire", "onBounce")
     m.bounceTimer.control = "start"
 
-    ' Camera mode setup
-    if m.mode = "camera"
+    if m.mode = "video"
+        ' Video mode: fetch camera info to get stream URL, then start playback
+        ' No photo timer needed — video plays continuously
+        m.photoA.visible = false
+        m.photoB.visible = false
+        fetchVideoStreamInfo()
+    else if m.mode = "camera"
+        m.photoTimer.duration = m.CAMERA_SEC
+        m.photoTimer.observeField("fire", "onPhotoTimer")
+        m.photoTimer.control = "start"
         m.photoA.opacity = 1.0
         m.photoB.opacity = 1.0
         if m.cycleMode then fetchCameraList()
+        loadNextImage()
+    else
+        m.photoTimer.duration = m.PHOTO_SEC
+        m.photoTimer.observeField("fire", "onPhotoTimer")
+        m.photoTimer.control = "start"
+        loadNextImage()
     end if
 
     ' Initial render
     updateClock()
-    loadNextImage()
     fetchNextData()
 end sub
 
@@ -291,6 +299,38 @@ sub resizeOverlay()
     m.overlayBg.height = h
     m.overlayW = w
     m.overlayH = h
+end sub
+
+' -- Video mode (HLS) --
+
+sub fetchVideoStreamInfo()
+    ts = CreateObject("roDateTime")
+    url = m.SERVER_URL + "/camera/" + m.cameraName + "/info?t=" + ts.asSeconds().toStr()
+    task = CreateObject("roSGNode", "HttpTask")
+    task.observeField("response", "onVideoInfoResponse")
+    task.request = { url: url }
+    task.control = "run"
+    m.videoInfoTask = task
+end sub
+
+sub onVideoInfoResponse(event as object)
+    text = event.getData()
+    if text = invalid or text = "" then return
+
+    info = ParseJSON(text)
+    if info = invalid then return
+
+    streamUrl = info.stream
+    if streamUrl = invalid or streamUrl = "" then return
+
+    ' Start HLS video playback (muted — screensaver should be silent)
+    m.videoPlayer.visible = true
+    m.videoPlayer.mute = true
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = streamUrl
+    content.streamFormat = "hls"
+    m.videoPlayer.content = content
+    m.videoPlayer.control = "play"
 end sub
 
 ' -- Anti-burn-in bounce --
