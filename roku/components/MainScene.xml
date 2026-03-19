@@ -24,19 +24,21 @@
 
     <!-- Preview area (right side) -->
     <Group id="previewGroup" translation="[520,140]">
-      <Rectangle width="1340" height="754" color="#000000" />
+      <Rectangle id="previewBg" width="1340" height="754" color="#000000" />
 
-      <!-- Poster preview (for snapshot cameras) -->
-      <Poster id="previewPoster" width="1340" height="754"
-              translation="[0,0]" loadDisplayMode="scaleToFit" visible="true" />
+      <!-- Double-buffered poster preview (for snapshot cameras) -->
+      <Poster id="previewPosterA" width="1340" height="754"
+              translation="[0,0]" loadDisplayMode="scaleToFit" opacity="1.0" />
+      <Poster id="previewPosterB" width="1340" height="754"
+              translation="[0,0]" loadDisplayMode="scaleToFit" opacity="0.0" />
 
       <!-- Video preview (for HLS stream cameras) -->
       <Video id="previewVideo" width="1340" height="754"
              translation="[0,0]" visible="false" />
 
       <!-- Camera name overlay -->
-      <Group translation="[20,700]">
-        <Rectangle width="300" height="40" color="#000000AA" cornerRadius="8" />
+      <Group id="previewLabelGroup" translation="[20,700]">
+        <Rectangle width="300" height="40" color="#000000AA" />
         <Label id="previewLabel" text="" color="#FFFFFF"
                translation="[12,8]">
           <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
@@ -64,7 +66,7 @@
         </Label>
         <!-- PTZ badge -->
         <Group translation="[1700,40]">
-          <Rectangle width="160" height="36" color="#000000AA" cornerRadius="8" />
+          <Rectangle width="160" height="36" color="#000000AA" />
           <Label id="ptzBadge" text="PTZ" color="#44FF44"
                  translation="[12,6]" width="136" horizAlign="center">
             <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
@@ -72,7 +74,7 @@
         </Group>
         <!-- Zoom hint -->
         <Group translation="[1700,1000]">
-          <Rectangle width="160" height="36" color="#000000AA" cornerRadius="8" />
+          <Rectangle width="160" height="36" color="#000000AA" />
           <Label text="Rew/FF = Zoom" color="#FFFFFFAA"
                  translation="[8,6]" width="144" horizAlign="center">
             <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="12" />
@@ -90,6 +92,9 @@
            translation="[60,920]" color="#555555">
       <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
     </Label>
+
+    <!-- Focus trap — receives focus in fullscreen so D-pad doesn't go to list -->
+    <Group id="focusTrap" focusable="true" />
 
     <!-- Refresh timer for poster preview -->
     <Timer id="previewTimer" repeat="true" duration="1" />

@@ -8,8 +8,7 @@
   </interface>
 
   <children>
-    <Rectangle id="bg" width="400" height="56" color="#FFFFFF10" cornerRadius="6"
-               translation="[0,2]" />
+    <Rectangle id="bg" width="400" height="56" color="#FFFFFF10"               translation="[0,2]" />
     <Label id="nameLabel" text="" color="#FFFFFF"
            translation="[16,14]" width="340">
       <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="20" />

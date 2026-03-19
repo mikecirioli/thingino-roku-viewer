@@ -146,7 +146,7 @@ _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, 
 
 def _load_cameras():
     """Load camera config from YAML file or CAMERAS env var."""
-    global _CAMERAS
+    global _CAMERAS, _cameras_lower
 
     # Try YAML file first
     if os.path.isfile(CAMERAS_FILE):
@@ -156,6 +156,7 @@ def _load_cameras():
                 cfg = yaml.safe_load(f)
             if cfg and "cameras" in cfg:
                 _CAMERAS = cfg["cameras"]
+                _cameras_lower = {k.lower(): k for k in _CAMERAS}
                 print(f"  cameras: loaded {len(_CAMERAS)} from {CAMERAS_FILE}")
                 return
         except ImportError:
@@ -181,6 +182,7 @@ def _load_cameras():
             print(f"  cameras: loaded {len(_CAMERAS)} from CAMERAS env var (legacy)")
         except json.JSONDecodeError:
             print("WARNING: CAMERAS env var is not valid JSON, ignoring")
+    _cameras_lower = {k.lower(): k for k in _CAMERAS}
 
 
 def _go2rtc_streams():
@@ -375,10 +377,24 @@ class CameraStream:
 _streams = {}
 _streams_lock = threading.Lock()
 
+# Case-insensitive camera name lookup
+_cameras_lower = {}  # populated by _load_cameras()
+
+
+def _resolve_camera(name):
+    """Resolve camera name (case-insensitive). Returns (canonical_name, config) or (None, None)."""
+    cam = _CAMERAS.get(name)
+    if cam:
+        return name, cam
+    canonical = _cameras_lower.get(name.lower())
+    if canonical:
+        return canonical, _CAMERAS[canonical]
+    return None, None
+
 
 def camera_snapshot(name, max_w=None, max_h=None):
     """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
-    cam = _CAMERAS.get(name)
+    name, cam = _resolve_camera(name)
     if not cam:
         return None, None
     with _streams_lock:
@@ -397,7 +413,7 @@ def camera_snapshot(name, max_w=None, max_h=None):
 
 def camera_info(name):
     """Return camera info dict for /camera/<name>/info endpoint."""
-    cam = _CAMERAS.get(name)
+    name, cam = _resolve_camera(name)
     if not cam:
         return None
     return {
@@ -565,7 +581,9 @@ _ptz_lock = threading.Lock()
 
 def get_ptz(name):
     """Get or create an OnvifPtz controller for a camera. Returns None if no ONVIF config."""
-    cam = _CAMERAS.get(name, {})
+    name, cam = _resolve_camera(name)
+    if not cam:
+        return None
     onvif = cam.get("onvif")
     if not onvif:
         return None
@@ -1009,7 +1027,10 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def serve_camera_list(self):
-        names = sorted(set(list(_CAMERAS.keys()) + _go2rtc_streams()))
+        # Deduplicate: YAML names take priority over go2rtc lowercase names
+        seen_lower = {k.lower() for k in _CAMERAS}
+        extras = [n for n in _go2rtc_streams() if n.lower() not in seen_lower]
+        names = sorted(list(_CAMERAS.keys()) + extras)
         data = json.dumps(names).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

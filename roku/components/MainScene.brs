@@ -6,7 +6,13 @@
 ' ============================================================
 ' Camera browser with live preview.
 ' Left: camera list. Right: live preview (HLS video or poster refresh).
-' OK = fullscreen, * = screensaver settings, Back = exit.
+' OK = fullscreen, Back = exit.
+'
+' Fixes applied:
+'   - Double-buffered poster (A/B swap) eliminates snapshot flash
+'   - Focus moves to m.top in fullscreen so PTZ keys work
+'   - Background rect resized for fullscreen
+'   - previewLabelGroup repositioned for fullscreen
 ' ============================================================
 
 sub init()
@@ -16,22 +22,36 @@ sub init()
     m.cameraList = m.top.findNode("cameraList")
     m.cameraListContent = m.top.findNode("cameraListContent")
     m.loadingLabel = m.top.findNode("loadingLabel")
-    m.previewPoster = m.top.findNode("previewPoster")
+    m.previewPosterA = m.top.findNode("previewPosterA")
+    m.previewPosterB = m.top.findNode("previewPosterB")
     m.previewVideo = m.top.findNode("previewVideo")
     m.previewLabel = m.top.findNode("previewLabel")
+    m.previewLabelGroup = m.top.findNode("previewLabelGroup")
     m.previewTimer = m.top.findNode("previewTimer")
+    m.previewBg = m.top.findNode("previewBg")
 
     m.ptzOverlay = m.top.findNode("ptzOverlay")
     m.ptzBadge = m.top.findNode("ptzBadge")
+    m.focusTrap = m.top.findNode("focusTrap")
 
     ' Camera data: array of {name, hasSnapshot, stream, streamType, ptz}
     m.cameras = []
     m.currentCamera = -1
     m.previewMode = "poster" ' "poster" or "video"
 
+    ' Double-buffer state for poster preview
+    m.posterFront = "a"  ' which poster is currently showing
+
     ' Fullscreen state
     m.fullscreen = false
-    m.ptzActive = false  ' true if current fullscreen camera has PTZ
+    m.ptzActive = false
+
+    ' Observe poster load status for double-buffer swap
+    m.previewPosterA.observeField("loadStatus", "onPosterLoadA")
+    m.previewPosterB.observeField("loadStatus", "onPosterLoadB")
+
+    ' Observe video state for buffering feedback
+    m.previewVideo.observeField("state", "onVideoState")
 
     m.cameraList.observeField("itemFocused", "onCameraFocused")
     m.previewTimer.observeField("fire", "onPreviewRefresh")
@@ -104,7 +124,6 @@ sub onCameraInfoResponse(event as object)
     info = ParseJSON(text)
     if info = invalid then return
 
-    ' Find which camera this is for by name
     for i = 0 to m.cameras.count() - 1
         if m.cameras[i].name = info.name
             m.cameras[i].hasSnapshot = info.snapshot
@@ -112,7 +131,6 @@ sub onCameraInfoResponse(event as object)
             m.cameras[i].streamType = info.stream_type
             m.cameras[i].ptz = (info.ptz = true)
 
-            ' Update list item description
             content = m.cameraListContent.getChild(i)
             if content <> invalid
                 desc = ""
@@ -127,7 +145,6 @@ sub onCameraInfoResponse(event as object)
                 content.description = desc
             end if
 
-            ' If this is the currently focused camera, update preview
             if i = m.currentCamera then startPreview(i)
             exit for
         end if
@@ -145,18 +162,25 @@ sub startPreview(idx as integer)
     m.currentCamera = idx
     cam = m.cameras[idx]
     m.previewLabel.text = cam.name
+    print "startPreview: " + cam.name + " stream=" + cam.stream
 
     ' Stop any existing video
     m.previewVideo.control = "stop"
     m.previewVideo.visible = false
-    m.previewPoster.visible = true
+    m.previewPosterA.visible = true
+    m.previewPosterB.visible = true
+    m.previewPosterA.opacity = 1.0
+    m.previewPosterB.opacity = 0.0
+    m.posterFront = "a"
 
-    ' Decide preview mode based on camera capabilities
     if cam.stream <> ""
-        ' Has HLS stream — use Video node
+        ' HLS stream — use Video node
         m.previewMode = "video"
         m.previewTimer.control = "stop"
-        m.previewPoster.visible = false
+        m.previewPosterA.visible = false
+        m.previewPosterB.visible = false
+        m.previewPosterA.opacity = 0.0
+        m.previewPosterB.opacity = 0.0
         m.previewVideo.visible = true
 
         content = CreateObject("roSGNode", "ContentNode")
@@ -165,25 +189,79 @@ sub startPreview(idx as integer)
         m.previewVideo.content = content
         m.previewVideo.control = "play"
     else
-        ' Snapshot only — use poster with refresh timer
+        ' Snapshot — double-buffered poster refresh
         m.previewMode = "poster"
         m.previewVideo.visible = false
-        m.previewPoster.visible = true
+        m.previewPosterA.visible = true
+        m.previewPosterB.visible = true
         refreshPosterPreview()
         m.previewTimer.control = "start"
     end if
 end sub
 
+' -- Double-buffered poster preview --
+' Both posters overlap. Load into the hidden one, swap opacity on ready.
+
 sub refreshPosterPreview()
     if m.currentCamera < 0 or m.currentCamera >= m.cameras.count() then return
     cam = m.cameras[m.currentCamera]
     ts = CreateObject("roDateTime")
-    m.previewPoster.uri = m.SERVER_URL + "/camera/" + cam.name + "?t=" + ts.asSeconds().toStr()
+    url = m.SERVER_URL + "/camera/" + cam.name + "?t=" + ts.asSeconds().toStr()
+
+    ' Load into the back poster (the one currently hidden)
+    if m.posterFront = "a"
+        print "refreshPoster: loading B uri=" + url
+        m.previewPosterB.uri = url
+    else
+        print "refreshPoster: loading A uri=" + url
+        m.previewPosterA.uri = url
+    end if
+end sub
+
+sub onPosterLoadA(event as object)
+    status = event.getData()
+    print "onPosterLoadA: " + status
+    if status = "ready" and m.previewMode = "poster"
+        m.previewPosterA.opacity = 1.0
+        m.previewPosterB.opacity = 0.0
+        m.posterFront = "a"
+    end if
+end sub
+
+sub onPosterLoadB(event as object)
+    status = event.getData()
+    print "onPosterLoadB: " + status
+    if status = "ready" and m.previewMode = "poster"
+        m.previewPosterB.opacity = 1.0
+        m.previewPosterA.opacity = 0.0
+        m.posterFront = "b"
+    end if
 end sub
 
 sub onPreviewRefresh()
     if m.previewMode = "poster" then refreshPosterPreview()
 end sub
+
+sub onVideoState(event as object)
+    state = event.getData()
+    if state = "buffering"
+        m.previewLabel.text = m.cameras[m.currentCamera].name + " (buffering...)"
+    else if state = "playing"
+        m.previewLabel.text = m.cameras[m.currentCamera].name
+    else if state = "error"
+        m.previewLabel.text = m.cameras[m.currentCamera].name + " (stream error)"
+        ' Fall back to snapshot mode after a delay
+        m.previewVideo.control = "stop"
+        m.previewVideo.visible = false
+        m.previewPosterA.visible = true
+        m.previewPosterB.visible = true
+        m.previewMode = "poster"
+        refreshPosterPreview()
+        m.previewTimer.control = "start"
+    end if
+end sub
+
+' -- Fullscreen --
 
 sub enterFullscreen()
     if m.currentCamera < 0 then return
@@ -196,15 +274,23 @@ sub enterFullscreen()
     m.top.findNode("appSubtitle").visible = false
     m.top.findNode("hintBar").visible = false
 
+    ' Move focus to the focus trap so D-pad doesn't go to the list
+    m.focusTrap.setFocus(true)
+
     ' Expand preview to fullscreen
     previewGroup = m.top.findNode("previewGroup")
     previewGroup.translation = [0, 0]
-    m.previewPoster.width = 1920
-    m.previewPoster.height = 1080
+    m.previewBg.width = 1920
+    m.previewBg.height = 1080
+    m.previewPosterA.width = 1920
+    m.previewPosterA.height = 1080
+    m.previewPosterB.width = 1920
+    m.previewPosterB.height = 1080
     m.previewVideo.width = 1920
     m.previewVideo.height = 1080
+    m.previewLabelGroup.translation = [20, 1020]
 
-    ' Show PTZ overlay if camera supports it
+    ' Show PTZ overlay if camera supports it (both snapshot and HLS fullscreen)
     m.ptzActive = cam.ptz
     m.ptzOverlay.visible = cam.ptz
 end sub
@@ -226,20 +312,27 @@ sub exitFullscreen()
     ' Restore preview position
     previewGroup = m.top.findNode("previewGroup")
     previewGroup.translation = [520, 140]
-    m.previewPoster.width = 1340
-    m.previewPoster.height = 754
+    m.previewBg.width = 1340
+    m.previewBg.height = 754
+    m.previewPosterA.width = 1340
+    m.previewPosterA.height = 1080
+    m.previewPosterB.width = 1340
+    m.previewPosterB.height = 754
     m.previewVideo.width = 1340
     m.previewVideo.height = 754
+    m.previewLabelGroup.translation = [20, 700]
 
     m.cameraList.setFocus(true)
 end sub
+
+' -- PTZ --
 
 sub sendPtzCommand(action as string, direction as string)
     if m.currentCamera < 0 then return
     cam = m.cameras[m.currentCamera]
     body = ""
     if action = "move"
-        body = FormatJSON({ action: "move", direction: direction, speed: 0.5 })
+        body = FormatJSON({ action: "move", direction: direction, speed: 1.0 })
     else
         body = FormatJSON({ action: "stop" })
     end if
@@ -251,7 +344,6 @@ sub sendPtzCommand(action as string, direction as string)
         body: body
     }
     task.control = "run"
-    ' Fire-and-forget — no response observer needed
 end sub
 
 sub highlightPtzArrow(direction as string, on as boolean)
@@ -306,10 +398,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if key = "OK"
         enterFullscreen()
-        return true
-    end if
-
-    if key = "options"
         return true
     end if
 

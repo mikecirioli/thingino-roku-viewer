@@ -19,7 +19,7 @@
     <!-- Floating overlay (bounces for anti-burn-in) -->
     <Group id="overlay" translation="[100,100]">
       <Rectangle id="overlayBg" width="420" height="160"
-                 color="#000000E6" cornerRadius="14" />
+                 color="#000000E6" />
       <LayoutGroup id="overlayContent" translation="[24,16]"
                    layoutDirection="vert" itemSpacings="[2]">
         <Label id="clock" text=""
