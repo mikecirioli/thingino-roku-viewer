@@ -2,54 +2,56 @@
 ' https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 sub init()
-    m.SERVER_URL = "http://192.168.1.245:8099"
-    m.BLACKLIST = ["camera-3"]
+    m.DEFAULT_SERVER_URL = ""
 
+    m.urlLabel = m.top.findNode("urlLabel")
+    m.editUrlBtn = m.top.findNode("editUrlBtn")
     m.modeList = m.top.findNode("modeList")
     m.loading = m.top.findNode("loading")
     m.photoIntervalList = m.top.findNode("photoIntervalList")
     m.cycleIntervalList = m.top.findNode("cycleIntervalList")
 
-    ' Photo interval values (must match XML order)
     m.photoIntervalValues = [15, 30, 60, 120]
-    ' Cycle interval values
     m.cycleIntervalValues = [3, 5, 10, 15]
 
-    ' Track pending camera info requests
     m.pendingInfoCount = 0
-    m.cameraInfoMap = {}  ' name -> {stream, streamType}
+    m.cameraInfoMap = {}
 
     ' Load saved settings
     sec = CreateObject("roRegistrySection", "settings")
+
+    m.SERVER_URL = sec.Read("serverUrl")
+    if m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
+    m.urlLabel.text = m.SERVER_URL
+
     m.savedMode = sec.Read("mode")
     if m.savedMode <> "camera" and m.savedMode <> "video" then m.savedMode = "photo"
     m.savedCamera = sec.Read("camera")
     if m.savedCamera = "" then m.savedCamera = "cycle"
 
-    ' Restore photo interval selection
+    ' Restore photo interval
     savedPhotoInt = sec.Read("photoInterval")
     if savedPhotoInt = "" then savedPhotoInt = "30"
-    photoIdx = 1 ' default to 30s
+    photoIdx = 1
     for i = 0 to m.photoIntervalValues.count() - 1
         if m.photoIntervalValues[i].toStr() = savedPhotoInt then photoIdx = i
     end for
     m.photoIntervalList.checkedItem = photoIdx
 
-    ' Restore cycle interval selection
+    ' Restore cycle interval
     savedCycleInt = sec.Read("cycleInterval")
     if savedCycleInt = "" then savedCycleInt = "5"
-    cycleIdx = 1 ' default to 5s
+    cycleIdx = 1
     for i = 0 to m.cycleIntervalValues.count() - 1
         if m.cycleIntervalValues[i].toStr() = savedCycleInt then cycleIdx = i
     end for
     m.cycleIntervalList.checkedItem = cycleIdx
 
-    ' Mode options map
+    ' Mode options
     m.options = []
     m.options.push({ mode: "photo", camera: "" })
     m.options.push({ mode: "camera", camera: "cycle" })
 
-    ' Set initial mode selection
     if m.savedMode = "photo"
         m.modeList.checkedItem = 0
     else if m.savedCamera = "cycle"
@@ -58,7 +60,8 @@ sub init()
         m.modeList.checkedItem = 1
     end if
 
-    m.modeList.setFocus(true)
+    m.editUrlBtn.setFocus(true)
+    m.editUrlBtn.observeField("buttonSelected", "onEditUrl")
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
@@ -67,6 +70,54 @@ sub init()
     m.loading.visible = true
     fetchCameraList()
 end sub
+
+' -- Server URL editing --
+
+sub onEditUrl()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Enter Server URL"
+    dialog.text = m.SERVER_URL
+    dialog.buttons = ["OK", "Cancel"]
+    dialog.observeField("buttonSelected", "onUrlDialogButton")
+    m.top.dialog = dialog
+end sub
+
+sub onUrlDialogButton(event as object)
+    idx = event.getData()
+    dialog = m.top.dialog
+    if idx = 0
+        ' OK pressed — save the URL
+        newUrl = dialog.text
+        if newUrl <> "" and newUrl <> m.SERVER_URL
+            m.SERVER_URL = newUrl
+            m.urlLabel.text = newUrl
+            sec = CreateObject("roRegistrySection", "settings")
+            sec.Write("serverUrl", newUrl)
+            sec.Flush()
+            ' Re-fetch camera list with new URL
+            m.loading.visible = true
+            m.loading.text = "Loading cameras..."
+            clearCameraOptions()
+            fetchCameraList()
+        end if
+    end if
+    m.top.dialog = invalid
+end sub
+
+sub clearCameraOptions()
+    ' Reset mode list to just the two base options
+    content = m.modeList.content
+    while content.getChildCount() > 2
+        content.removeChildIndex(content.getChildCount() - 1)
+    end while
+    m.options = []
+    m.options.push({ mode: "photo", camera: "" })
+    m.options.push({ mode: "camera", camera: "cycle" })
+    m.filteredCamNames = []
+    m.cameraInfoMap = {}
+end sub
+
+' -- Camera list --
 
 sub fetchCameraList()
     ts = CreateObject("roDateTime")
@@ -82,6 +133,8 @@ sub onCameraListResponse(event as object)
     text = event.getData()
     if text = invalid or text = "" then
         m.loading.visible = false
+        m.loading.text = "Could not reach server"
+        m.loading.visible = true
         return
     end if
 
@@ -91,17 +144,12 @@ sub onCameraListResponse(event as object)
         return
     end if
 
-    ' Build filtered camera name list
     m.filteredCamNames = []
     for each name in json
-        skip = false
-        for each bl in m.BLACKLIST
-            if LCase(name) = LCase(bl) then skip = true
-        end for
-        if not skip then m.filteredCamNames.push(name)
+        m.filteredCamNames.push(name)
     end for
 
-    ' Add snapshot camera options immediately
+    ' Add snapshot camera options
     content = m.modeList.content
     savedIdx = -1
 
@@ -157,7 +205,6 @@ sub onCameraInfoResponse(event as object)
         end if
     end if
 
-    ' Once all info responses are back, add Live Video options
     if m.pendingInfoCount <= 0
         m.loading.visible = false
         addVideoOptions()
@@ -187,6 +234,8 @@ sub addVideoOptions()
         m.modeList.checkedItem = savedIdx
     end if
 end sub
+
+' -- Setting changes --
 
 sub onModeChanged()
     idx = m.modeList.checkedItem

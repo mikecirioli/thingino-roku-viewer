@@ -1,0 +1,71 @@
+# 3 Bad Dogs — Server Configuration
+#
+# Copy this file to config.yaml and edit for your setup.
+# Mount into the container at /config/config.yaml:
+#   docker run -v /path/to/config.yaml:/config/config.yaml:ro \
+#              -v /path/to/photos:/media:ro \
+#              -p 8099:8099 3-bad-dogs-server
+#
+# All settings have sensible defaults. Only photo_dir is required
+# if you want the photo frame / screensaver slideshow feature.
+
+# Path to your photo library (inside the container — mount via docker volume)
+# The container maps this to /media by default
+photo_dir: /media
+
+# Server port (default: 8099)
+# port: 8099
+
+# Photo frame HTML page refresh interval in seconds (default: 30)
+# refresh: 30
+
+# Camera snapshot idle timeout in seconds (default: 30)
+# camera_idle: 30
+
+# ── Cameras ──────────────────────────────────────────────
+cameras:
+  # Thingino camera with snapshot URL and session-based auth
+  # front-door:
+  #   snapshot: http://192.168.1.55/x/ch0.jpg
+  #   auth:
+  #     type: a_secure_password
+  #     username: admin
+  #     password: front-door
+
+  # Camera with snapshot, HLS stream, and PTZ (ONVIF)
+  # The Roku app uses HLS for live video, D-pad for PTZ in fullscreen
+  # living-room:
+  #   snapshot: http://192.168.1.106/x/ch0.jpg
+  #   stream: http://192.168.1.207:1984/api/stream.m3u8?src=living-room_main
+  #   auth:
+  #     type: a_secure_password
+  #     username: admin
+  #     password: password456
+  #   onvif:
+  #     host: 192.168.1.106
+  #     port: 80
+  #     username: a_secure_password
+  #     password: a_secure_password
+
+  # Stream-only camera (no snapshot URL)
+  # Server will use ffmpeg to extract frames for the screensaver
+  # camera-3:
+  #   stream: http://go2rtc:1984/api/stream.m3u8?src=camera-3_main
+  #   stream_type: hls
+
+  # Basic auth camera (non-a_secure_password)
+  # garage:
+  #   snapshot: http://192.168.1.100/snapshot.jpg
+  #   auth:
+  #     type: basic
+  #     username: admin
+  #     password: secret
+
+  # No-auth camera (public snapshot URL)
+  # weathercam:
+  #   snapshot: http://192.168.1.200/image.jpg
+
+# ── Optional: Home Assistant integration ─────────────────
+# Enables /ha/weather, /ha/event, /ha/thermostat, /ha/forecast endpoints
+# ha_url: http://192.168.1.245:8123
+# ha_token: YOUR_LONG_LIVED_ACCESS_TOKEN

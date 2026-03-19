@@ -15,11 +15,10 @@
 
 sub init()
     ' -- Configuration --
-    m.SERVER_URL  = "http://192.168.1.245:8099"
+    m.DEFAULT_SERVER_URL = ""
     m.PHOTO_W     = 1920
     m.PHOTO_H     = 1080
     m.PHOTO_FIT   = "scaleToFit"
-    m.BLACKLIST   = ["camera-3"]
 
     m.dataSources = [
         "/ha/weather",
@@ -30,6 +29,9 @@ sub init()
 
     ' Read saved settings from registry
     sec = CreateObject("roRegistrySection", "settings")
+    m.SERVER_URL = sec.Read("serverUrl")
+    if m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
+
     m.mode = sec.Read("mode")
     if m.mode <> "camera" and m.mode <> "video" then m.mode = "photo"
 
@@ -204,18 +206,7 @@ sub onCameraListResponse(event as object)
     json = ParseJSON(text)
     if json = invalid or type(json) <> "roArray" or json.count() = 0 then return
 
-    filtered = []
-    for each name in json
-        skip = false
-        for each bl in m.BLACKLIST
-            if LCase(name) = LCase(bl) then skip = true
-        end for
-        if not skip then filtered.push(name)
-    end for
-
-    if filtered.count() = 0 then return
-
-    m.cameraList = filtered
+    m.cameraList = json
     m.cameraIndex = 0
     m.cameraName = m.cameraList[0]
     m.cycleCounter = 0

@@ -5,11 +5,29 @@
   <children>
     <Rectangle width="1920" height="1080" color="#1a1a2e" />
 
-    <LayoutGroup translation="[200,80]" layoutDirection="vert" itemSpacings="[20]">
-      <Label id="title" text="3 Bad Dogs Screensaver Settings"
+    <LayoutGroup translation="[200,60]" layoutDirection="vert" itemSpacings="[16]">
+      <Label id="title" text="3 Bad Dogs Settings"
              color="#FFFFFF" />
 
-      <Label text="Screensaver Mode:" color="#AAAAAA" />
+      <!-- Server URL -->
+      <Label text="Server URL:" color="#AAAAAA">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+      </Label>
+      <Group>
+        <Rectangle id="urlBg" width="700" height="44" color="#FFFFFF15" />
+        <Label id="urlLabel" text="" color="#FFFFFF"
+               translation="[12,10]" width="676">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+      </Group>
+      <Button id="editUrlBtn" text="Edit Server URL" focusable="true" />
+
+      <Rectangle width="700" height="1" color="#FFFFFF33" />
+
+      <!-- Screensaver mode -->
+      <Label text="Screensaver Mode:" color="#AAAAAA">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+      </Label>
       <RadioButtonList id="modeList" focusable="true">
         <ContentNode role="content">
           <ContentNode title="Photo Frame - random photos with crossfade" />
@@ -20,9 +38,12 @@
       <Label id="loading" text="Loading cameras..."
              color="#666666" visible="false" />
 
-      <Rectangle width="600" height="1" color="#FFFFFF33" />
+      <Rectangle width="700" height="1" color="#FFFFFF33" />
 
-      <Label text="Photo Interval (seconds):" color="#AAAAAA" />
+      <!-- Timing -->
+      <Label text="Photo Interval:" color="#AAAAAA">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+      </Label>
       <RadioButtonList id="photoIntervalList" focusable="true">
         <ContentNode role="content">
           <ContentNode title="15 seconds" />
@@ -32,7 +53,9 @@
         </ContentNode>
       </RadioButtonList>
 
-      <Label text="Camera Cycle Interval (seconds):" color="#AAAAAA" />
+      <Label text="Camera Cycle Interval:" color="#AAAAAA">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+      </Label>
       <RadioButtonList id="cycleIntervalList" focusable="true">
         <ContentNode role="content">
           <ContentNode title="3 seconds" />
@@ -42,9 +65,13 @@
         </ContentNode>
       </RadioButtonList>
 
-      <Label id="hint" text="Press OK to select, Back to save and exit"
-             color="#666666" />
+      <Label id="hint" text="OK = select / edit    Back = save and exit"
+             color="#666666">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
+      </Label>
     </LayoutGroup>
+
+    <!-- Keyboard dialog (created dynamically) -->
   </children>
 
   <script type="text/brightscript" uri="SettingsScene.brs" />

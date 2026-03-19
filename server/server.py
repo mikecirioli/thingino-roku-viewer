@@ -15,57 +15,22 @@ Endpoints:
   /camera/<name> JPEG snapshot (optional ?w=&h= resize)
   /camera/<name>/info  JSON: {name, snapshot, stream, stream_type, ptz}
   /camera/<name>/ptz   POST: PTZ control (ONVIF) — {action, direction, speed}
-  /frigate/*     Proxy to Frigate API (requires FRIGATE_URL env var, adds CORS headers)
   /ha/weather    Plain text: current weather summary
   /ha/forecast   Plain text: 3-day forecast
   /ha/event      Plain text: next calendar event
   /ha/thermostat Plain text: thermostat status
   /health        Health check
 
-Camera configuration (in order of precedence):
-  1. cameras.yaml file (CAMERAS_FILE env var, default: /config/cameras.yaml)
-  2. CAMERAS env var (JSON object, backward compatible)
+Configuration:
+  All settings are read from config.yaml (default: /config/config.yaml).
+  Environment variables override config.yaml values for backward compatibility.
 
-cameras.yaml format:
-  cameras:
-    front-door:
-      snapshot: http://192.168.1.55/x/ch0.jpg
-      auth:
-        type: a_secure_password          # "a_secure_password" or "basic"
-        username: admin
-        password: front-door
-    camera-3:
-      stream: http://192.168.1.207:1984/api/stream.m3u8?src=camera-3_main
-      stream_type: hls          # "hls" (default if stream present)
-    living-room:
-      snapshot: http://192.168.1.106/x/ch0.jpg
-      stream: http://go2rtc:1984/api/stream.m3u8?src=living-room_main
-      auth:
-        type: a_secure_password
-        username: admin
-        password: password456
-      onvif:                    # optional: enables PTZ controls
-        host: 192.168.1.106
-        port: 80
-        username: a_secure_password
-        password: a_secure_password
-
-Environment variables:
-  PHOTO_DIR      Directory containing images (default: /media)
-  PORT           Listen port (default: 8099)
-  REFRESH        Seconds between photo changes on the HTML page (default: 30)
-  TITLE          Page title / overlay text (default: empty)
-  CAMERAS_FILE   Path to cameras.yaml (default: /config/cameras.yaml)
-  CAMERAS        JSON object of a_secure_password cameras (legacy, backward compat)
-  CAMERA_IDLE    Seconds with no requests before closing a camera stream (default: 30)
-  FRIGATE_URL    Frigate base URL for proxy (e.g. http://frigate:5000)
-  GO2RTC_URL     go2rtc base URL for camera list discovery (e.g. http://go2rtc:1984)
-  HA_URL         Home Assistant URL (e.g. http://homeassistant:8123)
-  HA_TOKEN       Long-lived access token for HA REST API
+  See config.yaml.example for all available options.
 
 Usage:
-  python3 server.py
-  docker run -v /path/to/photos:/media -p 8099:8099 3-bad-dogs-server
+  docker run -v /path/to/config.yaml:/config/config.yaml:ro \\
+             -v /path/to/photos:/media:ro \\
+             -p 8099:8099 3-bad-dogs-server
 """
 
 import os
@@ -87,16 +52,16 @@ try:
 except ImportError:
     from urllib2 import urlopen, Request, URLError
 
-PHOTO_DIR = os.environ.get("PHOTO_DIR", "/media")
-PORT = int(os.environ.get("PORT", "8099"))
-REFRESH = int(os.environ.get("REFRESH", "30"))
-TITLE = os.environ.get("TITLE", "")
-CAMERAS_FILE = os.environ.get("CAMERAS_FILE", "/config/cameras.yaml")
-FRIGATE_URL = os.environ.get("FRIGATE_URL", "")
-GO2RTC_URL = os.environ.get("GO2RTC_URL", "").rstrip("/")
-CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", "30"))
-HA_URL = os.environ.get("HA_URL", "").rstrip("/")
-HA_TOKEN = os.environ.get("HA_TOKEN", "")
+CONFIG_FILE = os.environ.get("CONFIG_FILE", "/config/config.yaml")
+
+# Defaults — overridden by config.yaml, then by env vars
+PHOTO_DIR = "/media"
+PORT = 8099
+REFRESH = 30
+TITLE = ""
+CAMERA_IDLE = 30
+HA_URL = ""
+HA_TOKEN = ""
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
 # ── Photo cache ──────────────────────────────────────────
@@ -144,32 +109,49 @@ def resize_image(path, max_w, max_h):
 _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, password}}
 
 
-def _load_cameras():
-    """Load camera config from YAML file or CAMERAS env var."""
-    global _CAMERAS, _cameras_lower
+def _load_config():
+    """Load config from YAML file, with env var overrides."""
+    global PHOTO_DIR, PORT, REFRESH, TITLE
+    global CAMERA_IDLE, HA_URL, HA_TOKEN, _CAMERAS, _cameras_lower
 
-    # Try YAML file first
-    if os.path.isfile(CAMERAS_FILE):
-        try:
-            import yaml
-            with open(CAMERAS_FILE) as f:
-                cfg = yaml.safe_load(f)
-            if cfg and "cameras" in cfg:
-                _CAMERAS = cfg["cameras"]
-                _cameras_lower = {k.lower(): k for k in _CAMERAS}
-                print(f"  cameras: loaded {len(_CAMERAS)} from {CAMERAS_FILE}")
-                return
-        except ImportError:
-            print("WARNING: PyYAML not installed, cannot read cameras.yaml")
-        except Exception as e:
-            print(f"WARNING: failed to parse {CAMERAS_FILE}: {e}")
+    cfg = {}
+
+    # Also try legacy cameras.yaml path for backward compat
+    for path in [CONFIG_FILE, "/config/cameras.yaml"]:
+        if os.path.isfile(path):
+            try:
+                import yaml
+                with open(path) as f:
+                    cfg = yaml.safe_load(f) or {}
+                print(f"  config: loaded from {path}")
+                break
+            except ImportError:
+                print("WARNING: PyYAML not installed, cannot read config")
+            except Exception as e:
+                print(f"WARNING: failed to parse {path}: {e}")
+            break
+
+    # Apply config.yaml values (env vars override)
+    PHOTO_DIR = os.environ.get("PHOTO_DIR", cfg.get("photo_dir", PHOTO_DIR))
+    PORT = int(os.environ.get("PORT", cfg.get("port", PORT)))
+    REFRESH = int(os.environ.get("REFRESH", cfg.get("refresh", REFRESH)))
+    TITLE = os.environ.get("TITLE", cfg.get("title", TITLE))
+    CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", cfg.get("camera_idle", CAMERA_IDLE)))
+    HA_URL = os.environ.get("HA_URL", cfg.get("ha_url", HA_URL)).rstrip("/")
+    HA_TOKEN = os.environ.get("HA_TOKEN", cfg.get("ha_token", HA_TOKEN))
+
+    # Load cameras from config
+    if cfg.get("cameras"):
+        _CAMERAS = cfg["cameras"]
+        _cameras_lower = {k.lower(): k for k in _CAMERAS}
+        print(f"  cameras: {len(_CAMERAS)} configured")
+        return
 
     # Fall back to CAMERAS env var (legacy JSON format)
     cameras_env = os.environ.get("CAMERAS", "")
     if cameras_env:
         try:
             legacy = json.loads(cameras_env)
-            # Convert legacy format: {name: {ip, user, pass}} -> unified format
             for name, cam in legacy.items():
                 _CAMERAS[name] = {
                     "snapshot": "http://{}/x/ch0.jpg".format(cam["ip"]),
@@ -184,21 +166,6 @@ def _load_cameras():
             print("WARNING: CAMERAS env var is not valid JSON, ignoring")
     _cameras_lower = {k.lower(): k for k in _CAMERAS}
 
-
-def _go2rtc_streams():
-    """Fetch stream names from go2rtc, return list of base camera names."""
-    if not GO2RTC_URL:
-        return []
-    try:
-        resp = urlopen(GO2RTC_URL + "/api/streams", timeout=5)
-        data = json.loads(resp.read())
-        names = set()
-        for key in data:
-            base = key.rsplit("_main", 1)[0].rsplit("_sub", 1)[0]
-            names.add(base)
-        return sorted(names)
-    except Exception:
-        return []
 
 
 # ── Camera streams ───────────────────────────────────────
@@ -378,7 +345,7 @@ _streams = {}
 _streams_lock = threading.Lock()
 
 # Case-insensitive camera name lookup
-_cameras_lower = {}  # populated by _load_cameras()
+_cameras_lower = {}  # populated by _load_config()
 
 
 def _resolve_camera(name):
@@ -990,8 +957,6 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_camera_info(path)
         elif path.startswith("/camera/"):
             self.serve_camera(path, parsed)
-        elif path.startswith("/frigate") and FRIGATE_URL:
-            self.proxy_frigate(parsed)
         elif path.startswith("/ha/"):
             self.serve_ha(path)
         elif path == "/health":
@@ -1027,10 +992,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def serve_camera_list(self):
-        # Deduplicate: YAML names take priority over go2rtc lowercase names
-        seen_lower = {k.lower() for k in _CAMERAS}
-        extras = [n for n in _go2rtc_streams() if n.lower() not in seen_lower]
-        names = sorted(list(_CAMERAS.keys()) + extras)
+        names = sorted(_CAMERAS.keys())
         data = json.dumps(names).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -1102,28 +1064,6 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def proxy_frigate(self, parsed):
-        downstream = parsed.path[len("/frigate"):]
-        if not downstream:
-            downstream = "/"
-        url = FRIGATE_URL + downstream
-        if parsed.query:
-            url += "?" + parsed.query
-        try:
-            req = Request(url)
-            resp = urlopen(req, timeout=10)
-            data = resp.read()
-            ct = resp.headers.get("Content-Type", "application/octet-stream")
-            self.send_response(resp.status)
-            self.send_header("Content-Type", ct)
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(data)
-        except Exception as e:
-            self.send_error(502, "Frigate proxy error: {}".format(e))
-
     def serve_html(self):
         title_div = '<div class="title">{}</div>'.format(TITLE) if TITLE else ""
         html = HTML_TEMPLATE.replace("REFRESH_PLACEHOLDER", str(REFRESH))
@@ -1168,7 +1108,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    _load_cameras()
+    _load_config()
     photos = get_photos()
     print(f"3-bad-dogs server: {len(photos)} photos in {PHOTO_DIR}, port {PORT}, refresh {REFRESH}s")
     if not photos:
@@ -1180,10 +1120,6 @@ if __name__ == "__main__":
             has_stream = "stream" if cam.get("stream") else ""
             sources = " + ".join(filter(None, [has_snap, has_stream]))
             print(f"    {name}: {sources}")
-    if GO2RTC_URL:
-        cams = _go2rtc_streams()
-        print(f"  go2rtc: {len(cams)} cameras via {GO2RTC_URL}")
-
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         daemon_threads = True
 

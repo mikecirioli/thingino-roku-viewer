@@ -1,4 +1,5 @@
-# Secrets
+# Secrets (contain passwords/tokens)
+config.yaml
 cameras.yaml
 .env
 
