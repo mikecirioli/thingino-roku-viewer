@@ -5,7 +5,7 @@
 3 Bad Dogs — Photo & Camera Server
 
 Minimal HTTP server that serves random photos, camera snapshots
-(a_secure_password or ffmpeg-from-stream), and optional HA/Frigate proxying.
+(thingino or ffmpeg-from-stream), and optional HA/Frigate proxying.
 
 Endpoints:
   /              HTML page — full-screen photo frame with auto-refresh and clock overlay
@@ -30,7 +30,7 @@ cameras.yaml format:
     front-door:
       snapshot: http://192.168.1.55/x/ch0.jpg
       auth:
-        type: a_secure_password          # "a_secure_password" or "basic"
+        type: thingino          # "thingino" or "basic"
         username: admin
         password: front-door
     camera-3:
@@ -40,7 +40,7 @@ cameras.yaml format:
       snapshot: http://192.168.1.106/x/ch0.jpg
       stream: http://go2rtc:1984/api/stream.m3u8?src=living-room_main
       auth:
-        type: a_secure_password
+        type: thingino
         username: admin
         password: password456
 
@@ -50,7 +50,7 @@ Environment variables:
   REFRESH        Seconds between photo changes on the HTML page (default: 30)
   TITLE          Page title / overlay text (default: empty)
   CAMERAS_FILE   Path to cameras.yaml (default: /config/cameras.yaml)
-  CAMERAS        JSON object of a_secure_password cameras (legacy, backward compat)
+  CAMERAS        JSON object of thingino cameras (legacy, backward compat)
   CAMERA_IDLE    Seconds with no requests before closing a camera stream (default: 30)
   FRIGATE_URL    Frigate base URL for proxy (e.g. http://frigate:5000)
   GO2RTC_URL     go2rtc base URL for camera list discovery (e.g. http://go2rtc:1984)
@@ -167,7 +167,7 @@ def _load_cameras():
                 _CAMERAS[name] = {
                     "snapshot": "http://{}/x/ch0.jpg".format(cam["ip"]),
                     "auth": {
-                        "type": "a_secure_password",
+                        "type": "thingino",
                         "username": cam.get("user", "admin"),
                         "password": cam.get("pass", ""),
                     }
@@ -199,7 +199,7 @@ class CameraStream:
     """Polls a camera for live JPEG frames.
 
     Supports two snapshot sources:
-      1. Direct HTTP snapshot URL (a_secure_password /x/ch0.jpg with session auth, or basic auth)
+      1. Direct HTTP snapshot URL (thingino /x/ch0.jpg with session auth, or basic auth)
       2. ffmpeg extraction from an HLS/RTSP stream (for stream-only cameras)
     """
 
@@ -252,8 +252,8 @@ class CameraStream:
         auth_type = auth.get("type", "")
 
         if snapshot_url:
-            if auth_type == "a_secure_password":
-                return self._fetch_a_secure_password(snapshot_url, auth)
+            if auth_type == "thingino":
+                return self._fetch_thingino(snapshot_url, auth)
             elif auth_type == "basic":
                 return self._fetch_basic_auth(snapshot_url, auth)
             else:
@@ -261,22 +261,22 @@ class CameraStream:
 
         return None
 
-    def _fetch_a_secure_password(self, snapshot_url, auth):
-        """Fetch snapshot with a_secure_password session auth."""
+    def _fetch_thingino(self, snapshot_url, auth):
+        """Fetch snapshot with thingino session auth."""
         ip = self._extract_host(snapshot_url)
         if not self._session:
-            if not self._login_a_secure_password(ip, auth):
+            if not self._login_thingino(ip, auth):
                 return None
         raw = self._fetch_with_session(snapshot_url)
         if raw:
             return raw
         # Session expired — retry
-        if self._login_a_secure_password(ip, auth):
+        if self._login_thingino(ip, auth):
             return self._fetch_with_session(snapshot_url)
         return None
 
-    def _login_a_secure_password(self, ip, auth):
-        """Get a a_secure_password session cookie."""
+    def _login_thingino(self, ip, auth):
+        """Get a thingino session cookie."""
         try:
             url = "http://{}/x/login.cgi".format(ip)
             body = json.dumps({
@@ -289,7 +289,7 @@ class CameraStream:
             cookie = resp.headers.get("Set-Cookie", "")
             for part in cookie.split(";"):
                 part = part.strip()
-                if part.startswith("a_secure_password_session="):
+                if part.startswith("thingino_session="):
                     self._session = part.split("=", 1)[1]
                     return True
         except Exception:
@@ -297,9 +297,9 @@ class CameraStream:
         return False
 
     def _fetch_with_session(self, url):
-        """Fetch URL with a_secure_password session cookie."""
+        """Fetch URL with thingino session cookie."""
         req = Request(url)
-        req.add_header("Cookie", "a_secure_password_session=" + (self._session or ""))
+        req.add_header("Cookie", "thingino_session=" + (self._session or ""))
         try:
             resp = urlopen(req, timeout=5)
             if resp.status == 200:
