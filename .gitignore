@@ -1,16 +1,9 @@
-# Secrets (contain passwords/tokens)
-config.yaml
-cameras.yaml
-.env
-
-# Python
-__pycache__/
+~/
+node_modules/
+package.json
+package-lock.json
+roku/dist/
+roku/*.pkg
 *.pyc
-
-# Roku build artifacts
-*.zip
-out/
-
-# OS
-.DS_Store
-Thumbs.db
+__pycache__/
+.env
