@@ -30,8 +30,10 @@ sub init()
     m.previewPosterA.observeField("loadStatus", "onPosterLoadA")
     m.previewPosterB.observeField("loadStatus", "onPosterLoadB")
     m.previewVideo.observeField("state", "onVideoState")
+    m.cameraList.observeField("itemFocused", "onCameraFocused")
+    m.previewTimer.observeField("fire", "refreshPosterPreview")
 
-    if not sec.Exists("serverUrl") or m.SERVER_URL = m.DEFAULT_SERVER_URL
+    if not sec.Exists("serverUrl")
         showSettings()
     else
         fetchAllCameraInfo()
@@ -71,19 +73,28 @@ sub fetchAllCameraInfo()
     url = m.SERVER_URL + "/camera/all_info?t=" + ts.asSeconds().toStr()
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onAllInfoResponse")
+    task.observeField("error", "onAllInfoError")
     task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
     task.control = "run"
+    m.fetchTask = task
+end sub
+
+sub onAllInfoError(event as object)
+    errMsg = event.getData()
+    if errMsg = invalid then errMsg = "Connection failed"
+    m.loadingLabel.text = errMsg + ". Press * for Settings."
+    m.loadingLabel.visible = true
 end sub
 
 sub onAllInfoResponse(event as object)
-    task = event.getNode()
-    if task.error <> invalid and task.error <> ""
-        m.loadingLabel.text = "Error: " + task.error + ". Press * for Settings."
+    text = event.getData()
+    if text = invalid or text = ""
+        m.loadingLabel.text = "Empty response. Press * for Settings."
         m.loadingLabel.visible = true
         return
     end if
 
-    json = ParseJSON(task.response)
+    json = ParseJSON(text)
     if json = invalid or type(json) <> "roArray"
         m.loadingLabel.text = "Could not parse camera list. Press * for Settings."
         m.loadingLabel.visible = true
@@ -145,7 +156,10 @@ sub onAllInfoResponse(event as object)
         end if
     end for
 
-    if m.cameras.count() > 0 then m.cameraList.setFocus(true)
+    if m.cameras.count() > 0
+        m.cameraList.setFocus(true)
+        startPreview(0)
+    end if
 end sub
 
 sub onCameraFocused()
@@ -201,6 +215,13 @@ sub onPosterLoadB(event as object)
         m.previewPosterB.opacity = 1.0
         m.previewPosterA.opacity = 0.0
         m.posterFront = "b"
+    end if
+end sub
+
+sub onVideoState(event as object)
+    state = event.getData()
+    if state = "error"
+        print "Video playback error"
     end if
 end sub
 

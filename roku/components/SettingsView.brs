@@ -330,6 +330,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
     if key = "back"
+        ' Save all current settings to registry on exit
+        sec = CreateObject("roRegistrySection", "settings")
+        sec.Write("serverUrl", m.SERVER_URL)
+        sec.Write("username", m.USERNAME)
+        sec.Write("password", m.PASSWORD)
+        sec.Flush()
+
         m.top.visible = false
         m.top.wasClosed = true
         return true
