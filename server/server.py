@@ -863,7 +863,10 @@ class PhotoHandler(BaseHTTPRequestHandler):
         # --- FFmpeg execution ---
         video_dir = os.path.join(TIMELAPSE_STORAGE_PATH, "videos")
         os.makedirs(video_dir, exist_ok=True)
-        output_filename = f"timelapse_{int(time.time())}.mp4"
+        
+        start_ts_str = os.path.basename(all_frames[0]).replace('.jpg', '')
+        end_ts_str = os.path.basename(all_frames[-1]).replace('.jpg', '')
+        output_filename = f"{start_ts_str}-to-{end_ts_str}-timelapse.mp4"
         output_path = os.path.join(video_dir, output_filename)
         
         # Create a temporary file with the list of input frames
@@ -966,6 +969,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_timelapse_video_list()
         elif path.startswith("/timelapse/videos/"):
             self.serve_timelapse_video(path)
+        elif path == "/timelapse/frame":
+            self.serve_timelapse_frame()
         elif path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -1010,14 +1015,49 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def serve_timelapse_video_list(self):
-        """Serve a list of generated timelapse videos."""
+        """Serve a list of generated timelapse videos with metadata."""
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        filter_camera = params.get("camera", [None])[0]
+
         videos = []
         video_dir = os.path.join(TIMELAPSE_STORAGE_PATH, "videos")
         try:
-            videos = sorted(
-                [f for f in os.listdir(video_dir) if f.endswith(".mp4")],
-                reverse=True
-            )
+            for filename in sorted(os.listdir(video_dir), reverse=True):
+                if not filename.endswith(".mp4"):
+                    continue
+
+                if filter_camera and not filename.startswith(filter_camera):
+                    # A simple filter assuming filenames might be prefixed with cam name in future
+                    # For now, we parse the generated filenames
+                    try:
+                        # Placeholder for future camera-specific filtering if needed
+                        pass
+                    except:
+                        pass
+                
+                file_path = os.path.join(video_dir, filename)
+                try:
+                    # Use ffprobe to get metadata
+                    probe = subprocess.run(
+                        [
+                            "ffprobe", "-v", "error",
+                            "-show_entries", "format=duration,size",
+                            "-of", "default=noprint_wrappers=1:nokey=1",
+                            file_path
+                        ],
+                        capture_output=True, text=True, check=True
+                    )
+                    duration_str, size_str = probe.stdout.strip().split('\n')
+                    
+                    videos.append({
+                        "filename": filename,
+                        "size_mb": round(int(size_str) / (1024 * 1024), 2),
+                        "duration_seconds": float(duration_str)
+                    })
+                except Exception as e:
+                    print(f"WARNING: Could not probe video '{filename}': {e}")
+
         except FileNotFoundError:
             pass # No videos yet
         
@@ -1051,6 +1091,48 @@ class PhotoHandler(BaseHTTPRequestHandler):
         except Exception as e:
             print(f"ERROR: failed to serve video '{file_path}': {e}")
             self.send_error(500, "Failed to serve video")
+
+    def serve_timelapse_frame(self):
+        """Serve the closest frame to a given timestamp for a camera."""
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        camera_name = params.get("camera", [None])[0]
+        timestamp_str = params.get("timestamp", [None])[0]
+
+        if not camera_name or not timestamp_str:
+            self.send_error(400, "Missing 'camera' or 'timestamp' parameter")
+            return
+
+        cam_dir = os.path.join(TIMELAPSE_STORAGE_PATH, camera_name)
+        try:
+            frames = sorted([f for f in os.listdir(cam_dir) if f.endswith(".jpg")])
+            if not frames:
+                self.send_error(404, "No frames found for camera")
+                return
+
+            # Find the closest frame. Filenames are like 'YYYY-MM-DD_HH-MM-SS.jpg'
+            # The requested timestamp is ISO format. We can do a string comparison.
+            target_ts = timestamp_str.replace("T", " ").split(".")[0]
+            
+            # This is a simple linear search. For huge numbers of files, a binary search would be better,
+            # but for thousands of frames this will be fast enough.
+            best_frame = min(frames, key=lambda f: abs(datetime.fromisoformat(f.replace("_", " ").replace(".jpg","")) - datetime.fromisoformat(target_ts)))
+            
+            frame_path = os.path.join(cam_dir, best_frame)
+            with open(frame_path, "rb") as f:
+                data = f.read()
+            
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        except FileNotFoundError:
+            self.send_error(404, "No frames found for camera")
+        except Exception as e:
+            print(f"ERROR: failed to serve frame: {e}")
+            self.send_error(500, "Failed to serve frame")
 
     def serve_ha(self, path):
         handlers = {
