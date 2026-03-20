@@ -37,7 +37,7 @@
              translation="[0,0]" visible="false" />
 
       <!-- Camera name overlay -->
-      <Group translation="[20,700]">
+      <Group id="previewLabelGroup" translation="[20,700]">
         <Rectangle width="300" height="40" color="#000000AA" />
         <Label id="previewLabel" text="" color="#FFFFFF"
                translation="[12,8]">
@@ -46,12 +46,21 @@
       </Group>
     </Group>
 
+    <!-- PTZ indicator overlay (focusable to capture d-pad keys) -->
+    <Group id="ptzOverlay" visible="false" focusable="true">
+      <Rectangle width="1920" height="60" color="#000000CC" translation="[0,1020]" />
+      <Label id="ptzLabel" text="PTZ Mode: D-pad = Pan/Tilt    Rew/Fwd = Zoom    Back = Exit PTZ"
+             translation="[60,1030]" color="#FF6666">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="20" />
+      </Label>
+    </Group>
+
     <!-- Loading indicator -->
     <Label id="loadingLabel" text="Loading cameras..."
            translation="[860,500]" color="#666666" visible="true" />
 
     <!-- Hint bar -->
-    <Label id="hintBar" text="OK = Fullscreen    *  = Settings    Back = Exit"
+    <Label id="hintBar" text="OK = Fullscreen    Play = PTZ    *  = Settings    Back = Exit"
            translation="[60,920]" color="#555555">
       <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
     </Label>
