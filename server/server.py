@@ -259,11 +259,6 @@ class CameraStream:
             else:
                 return self._fetch_url(snapshot_url)
 
-        # No snapshot URL — try ffmpeg from stream
-        stream_url = self._config.get("stream")
-        if stream_url:
-            return self._fetch_ffmpeg(stream_url)
-
         return None
 
     def _fetch_a_secure_password(self, snapshot_url, auth):
