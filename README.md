@@ -183,11 +183,51 @@ Open the screensaver settings from **Roku Settings > Screensaver > Thingino Roku
 | `/camera/<name>` | JPEG snapshot (`?w=&h=` for resize) |
 | `/camera/<name>/info` | JSON: `{name, snapshot, stream, stream_type, ptz}` |
 | `/camera/<name>/ptz` | POST: `{action, direction, speed}` (ONVIF) |
+| `/camera/all_info` | JSON array of all camera info objects |
+| `/timelapse/summary` | JSON array: per-camera frame counts and time ranges |
+| `/timelapse/videos` | JSON array: generated videos with metadata (`?camera=` filter) |
+| `/timelapse/videos/<file>` | Serve/download a generated timelapse MP4 |
+| `/timelapse/frame` | Nearest JPEG frame (`?camera=&timestamp=`) for preview |
+| `/timelapse/generate` | POST: `{cameras[], start_time, end_time, fps}` — generate MP4 |
 | `/ha/weather` | Current weather (requires HA config) |
 | `/ha/forecast` | 3-day forecast (requires HA config) |
 | `/ha/event` | Next calendar event (requires HA config) |
 | `/ha/thermostat` | Thermostat status (requires HA config) |
 | `/health` | Health check |
+
+## Web UI
+
+The web interface is available at `http://<server-ip>:8099/web` and provides:
+
+- **Live View** tab — camera snapshots (1fps refresh) and MSE WebSocket live video via go2rtc, with PTZ controls for ONVIF cameras
+- **Time-lapse** tab — per-camera timeline with thumbnail previews, video generation, playback, and download
+
+### Time-lapse configuration
+
+Add a `timelapse` block to any camera in `config.yaml` to enable background frame capture:
+
+```yaml
+cameras:
+  front-door:
+    snapshot: http://192.168.1.55/x/ch0.jpg
+    auth:
+      type: thingino
+      username: admin
+      password: front-door
+    timelapse:
+      enabled: true
+      interval: 60        # seconds between captures
+      source: snapshot     # "snapshot" (default) or "stream"
+```
+
+Frames are stored in `/data/timelapse/<camera-name>/` inside the container. Mount a volume for persistence:
+
+```yaml
+volumes:
+  - ./timelapse-data:/data/timelapse
+```
+
+Generated videos are stored in `/data/timelapse/videos/` with filenames like `2026-03-20_08-00-00-to-2026-03-20_18-00-00-timelapse.mp4`.
 
 ## Optional: Home Assistant integration
 

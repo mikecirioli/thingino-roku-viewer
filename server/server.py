@@ -97,12 +97,20 @@ EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
 # ── Timelapse Capturer ──────────────────────────────────
 
+def _frame_to_iso(filename):
+    """Convert frame filename like '2026-03-20_12-56-00.jpg' to '2026-03-20T12:56:00'."""
+    base = filename.replace(".jpg", "")  # 2026-03-20_12-56-00
+    date_part, time_part = base.split("_", 1)  # 2026-03-20, 12-56-00
+    return date_part + "T" + time_part.replace("-", ":") + "Z"  # 2026-03-20T12:56:00Z (UTC)
+
+
 class TimelapseCapturer:
     """Manages background snapshot capture for multiple cameras."""
 
     def __init__(self, cameras_config):
         self._cameras = cameras_config
         self._timers = {}
+        self._lock = threading.Lock()
         self._thread = None
 
     def start(self):
@@ -115,26 +123,106 @@ class TimelapseCapturer:
 
     def _run(self):
         """Main loop to schedule and trigger camera snapshots."""
+        self._load_saved_config()
         for name, config in self._cameras.items():
             tl_config = config.get("timelapse")
             if tl_config and tl_config.get("enabled"):
+                print(f"  timelapse: starting capture for '{name}' every {tl_config.get('interval', 60)}s")
+                self._capture_frame(name, tl_config)
                 self._schedule_next_capture(name, tl_config)
-        
-        # Keep thread alive to manage timers
+
         while True:
             time.sleep(1)
+
+    def get_config(self, name):
+        """Get timelapse config for a camera."""
+        cam = self._cameras.get(name, {})
+        tl = cam.get("timelapse", {})
+        return {
+            "enabled": bool(tl.get("enabled")),
+            "interval": tl.get("interval", 60),
+            "source": tl.get("source", "snapshot"),
+        }
+
+    def set_config(self, name, enabled, interval):
+        """Dynamically enable/disable timelapse for a camera."""
+        cam = self._cameras.get(name)
+        if not cam:
+            return False
+        if "timelapse" not in cam:
+            cam["timelapse"] = {}
+        cam["timelapse"]["enabled"] = enabled
+        cam["timelapse"]["interval"] = max(10, interval)
+
+        # Cancel existing timer (lock just for timer dict access)
+        with self._lock:
+            old_timer = self._timers.pop(name, None)
+        if old_timer:
+            old_timer.cancel()
+
+        if enabled:
+            print(f"  timelapse: enabling capture for '{name}' every {interval}s")
+            # Capture first frame immediately in a background thread
+            threading.Thread(target=self._capture_frame, args=[name, cam["timelapse"]], daemon=True).start()
+            self._schedule_next_capture(name, cam["timelapse"])
+        else:
+            print(f"  timelapse: disabling capture for '{name}'")
+
+        # Persist to YAML config
+        self._save_config()
+        return True
+
+    def _save_config(self):
+        """Persist timelapse config to a separate file (main config is read-only)."""
+        try:
+            os.makedirs(TIMELAPSE_STORAGE_PATH, exist_ok=True)
+            cfg_path = os.path.join(TIMELAPSE_STORAGE_PATH, "timelapse_config.json")
+            tl_cfg = {}
+            for name, cam in self._cameras.items():
+                tl = cam.get("timelapse")
+                if tl:
+                    tl_cfg[name] = {
+                        "enabled": tl.get("enabled", False),
+                        "interval": tl.get("interval", 60),
+                        "source": tl.get("source", "snapshot"),
+                    }
+            with open(cfg_path, "w") as f:
+                json.dump(tl_cfg, f, indent=2)
+        except Exception as e:
+            print(f"WARNING: failed to persist timelapse config: {e}")
+
+    def _load_saved_config(self):
+        """Load persisted timelapse config and merge into camera configs."""
+        cfg_path = os.path.join(TIMELAPSE_STORAGE_PATH, "timelapse_config.json")
+        try:
+            with open(cfg_path) as f:
+                tl_cfg = json.load(f)
+            for name, tl in tl_cfg.items():
+                cam = self._cameras.get(name)
+                if cam:
+                    cam["timelapse"] = tl
+                    print(f"  timelapse: restored config for '{name}' (enabled={tl.get('enabled')}, interval={tl.get('interval')}s)")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print(f"WARNING: failed to load timelapse config: {e}")
 
     def _schedule_next_capture(self, name, tl_config):
         """Schedules the next snapshot for a given camera."""
         interval = tl_config.get("interval", 60)
         timer = threading.Timer(interval, self._capture_and_reschedule, args=[name, tl_config])
-        self._timers[name] = timer
+        with self._lock:
+            self._timers[name] = timer
         timer.start()
 
     def _capture_and_reschedule(self, name, tl_config):
         """The function executed by the timer."""
         self._capture_frame(name, tl_config)
-        self._schedule_next_capture(name, tl_config)
+        # Only reschedule if still enabled
+        cam = self._cameras.get(name, {})
+        tl = cam.get("timelapse", {})
+        if tl.get("enabled"):
+            self._schedule_next_capture(name, tl_config)
 
     def _capture_frame(self, name, tl_config):
         """Fetches and saves a single frame for a camera."""
@@ -915,6 +1003,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_ptz(path)
         elif path == "/timelapse/generate":
             self.handle_timelapse_generate()
+        elif path == "/timelapse/config":
+            self.handle_timelapse_config_post()
         else:
             self.send_error(404)
 
@@ -946,7 +1036,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
                     if fname.endswith(".jpg"):
                         # Filename format: YYYY-MM-DD_HH-MM-SS.jpg
                         # Compare as strings for simplicity
-                        f_ts = fname.replace("_", " ").replace(".jpg", "")
+                        f_ts = _frame_to_iso(fname)
                         if start_time_str <= f_ts <= end_time_str:
                             all_frames.append(os.path.join(cam_dir, fname))
             except FileNotFoundError:
@@ -1061,14 +1151,20 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.proxy_frigate(parsed)
         elif path.startswith("/ha/"):
             self.serve_ha(path)
+        elif path == "/timelapse/config":
+            self.serve_timelapse_config()
         elif path == "/timelapse/summary":
             self.serve_timelapse_summary()
         elif path == "/timelapse/videos":
             self.serve_timelapse_video_list()
         elif path.startswith("/timelapse/videos/"):
             self.serve_timelapse_video(path)
+        elif path == "/timelapse/frames":
+            self.serve_timelapse_frames()
         elif path == "/timelapse/frame":
             self.serve_timelapse_frame()
+        elif path.startswith("/web/"):
+            self.serve_web_static(path)
         elif path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -1076,6 +1172,48 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         else:
             self.send_error(404)
+
+    def serve_timelapse_config(self):
+        """GET /timelapse/config?camera=<name> — return capture config for a camera."""
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        camera_name = params.get("camera", [None])[0]
+        if not camera_name:
+            self.send_error(400, "Missing 'camera' parameter")
+            return
+        cfg = timelapse_capturer.get_config(camera_name)
+        data = json.dumps(cfg).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_timelapse_config_post(self):
+        """POST /timelapse/config — enable/disable capture for a camera."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        camera_name = data.get("camera")
+        enabled = bool(data.get("enabled", False))
+        interval = int(data.get("interval", 60))
+        if not camera_name:
+            self.send_error(400, "Missing 'camera' field")
+            return
+        ok = timelapse_capturer.set_config(camera_name, enabled, interval)
+        result = json.dumps({"ok": ok}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(result)))
+        self.end_headers()
+        self.wfile.write(result)
 
     def serve_timelapse_summary(self):
         """Serve a summary of available timelapse frames for each camera."""
@@ -1093,8 +1231,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
                 summary.append({
                     "camera_name": cam_name,
                     "frame_count": len(frames),
-                    "first_snapshot_timestamp": frames[0].replace("_", " ").replace(".jpg", ""),
-                    "last_snapshot_timestamp": frames[-1].replace("_", " ").replace(".jpg", ""),
+                    "first_snapshot_timestamp": _frame_to_iso(frames[0]),
+                    "last_snapshot_timestamp": _frame_to_iso(frames[-1]),
                 })
         except FileNotFoundError:
             pass # No timelapse data yet, return empty list
@@ -1104,6 +1242,29 @@ class PhotoHandler(BaseHTTPRequestHandler):
             return
 
         data = json.dumps(summary).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_timelapse_frames(self):
+        """GET /timelapse/frames?camera=<name> — return sorted list of frame timestamps."""
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        camera = params.get("camera", [None])[0]
+        if not camera:
+            self.send_error(400, "Missing camera parameter")
+            return
+        cam_dir = os.path.join(TIMELAPSE_STORAGE_PATH, camera)
+        try:
+            frames = sorted([f for f in os.listdir(cam_dir) if f.endswith(".jpg")])
+        except FileNotFoundError:
+            frames = []
+        timestamps = [_frame_to_iso(f) for f in frames]
+        data = json.dumps(timestamps).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-cache")
@@ -1208,13 +1369,14 @@ class PhotoHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "No frames found for camera")
                 return
 
-            # Find the closest frame. Filenames are like 'YYYY-MM-DD_HH-MM-SS.jpg'
-            # The requested timestamp is ISO format. We can do a string comparison.
-            target_ts = timestamp_str.replace("T", " ").split(".")[0]
-            
-            # This is a simple linear search. For huge numbers of files, a binary search would be better,
-            # but for thousands of frames this will be fast enough.
-            best_frame = min(frames, key=lambda f: abs(datetime.fromisoformat(f.replace("_", " ").replace(".jpg","")) - datetime.fromisoformat(target_ts)))
+            # Find the closest frame by naive datetime comparison (all times are UTC)
+            target_str = timestamp_str.replace("Z", "").split("+")[0].split(".")[0]
+            target_ts = datetime.fromisoformat(target_str)
+
+            def _frame_dt(f):
+                return datetime.fromisoformat(_frame_to_iso(f).replace("Z", ""))
+
+            best_frame = min(frames, key=lambda f: abs(_frame_dt(f) - target_ts))
             
             frame_path = os.path.join(cam_dir, best_frame)
             with open(frame_path, "rb") as f:
@@ -1339,6 +1501,28 @@ class PhotoHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_error(404, 'Web UI not found')
 
+    def serve_web_static(self, path):
+        """Serve static files from /web/ directory (logo, etc)."""
+        filename = path.split("/")[-1]
+        # Only allow specific safe extensions
+        allowed = {'.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.svg': 'image/svg+xml'}
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in allowed:
+            self.send_error(404)
+            return
+        filepath = os.path.join('/web', filename)
+        try:
+            with open(filepath, 'rb') as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', allowed[ext])
+            self.send_header('Cache-Control', 'max-age=3600')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except FileNotFoundError:
+            self.send_error(404)
+
     def serve_html(self):
         title_div = '<div class="title">{}</div>'.format(TITLE) if TITLE else ""
         html = HTML_TEMPLATE.replace("REFRESH_PLACEHOLDER", str(REFRESH))
@@ -1421,6 +1605,7 @@ if __name__ == "__main__":
     server = ThreadingHTTPServer(("0.0.0.0", PORT), PhotoHandler)
 
     # Start the timelapse capture service if configured
+    global timelapse_capturer
     timelapse_capturer = TimelapseCapturer(_CAMERAS)
     timelapse_capturer.start()
 

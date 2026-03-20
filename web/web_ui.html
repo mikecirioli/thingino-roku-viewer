@@ -3,291 +3,1119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thingino Viewer</title>
+    <title>3 Bad Dogs - Camera Viewer</title>
+    <link rel="icon" type="image/png" href="/web/logo.png">
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         :root {
-            --bg-color: #121212; --sidebar-bg: #1e1e1e; --text-color: #e0e0e0;
-            --header-color: #2a2a2a; --accent-color: #bb86fc; --border-color: #333;
-            --button-bg: #333; --button-hover: #444; --timeline-bg: #424242; --timeline-handle: #bb86fc;
+            --bg-color: #3a7ca5;
+            --sidebar-bg: #327a9e;
+            --text-color: #ffffff;
+            --header-color: #2d6e91;
+            --accent-color: #FF6700;
+            --border-color: #5aadd0;
+            --button-bg: #2b6b8e;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0; background-color: var(--bg-color); color: var(--text-color);
-            display: flex; height: 100vh; overflow: hidden; user-select: none;
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
         }
-        
-        /* Layout */
+
+        /* Normal Mode Layout */
+        #normal-mode { display: flex; width: 100%; height: 100%; }
         #sidebar {
-            width: 280px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color);
-            display: flex; flex-direction: column; z-index: 10;
+            width: 250px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
         }
-        #main-container { flex-grow: 1; display: flex; flex-direction: column; }
-        
-        /* Sidebar */
-        #header { padding: 20px; background-color: var(--header-color); text-align: center; }
-        #header h1 { margin: 0; font-size: 1.5em; color: var(--accent-color); }
+        #header { padding: 12px; background-color: var(--header-color); text-align: center; }
+        #header img { max-width: 100%; max-height: 80px; object-fit: contain; }
         #camera-list { list-style: none; padding: 0; margin: 0; flex-grow: 1; overflow-y: auto; }
         #camera-list li {
-            padding: 15px 20px; cursor: pointer; border-bottom: 1px solid var(--border-color);
-            display: flex; flex-direction: column; transition: background-color 0.2s;
+            padding: 15px 20px;
+            cursor: pointer;
+            border-bottom: 1px solid #ffffff15;
+            display: flex;
+            flex-direction: column;
         }
-        #camera-list li:hover { background-color: #ffffff1a; }
-        #camera-list li.active { background-color: #bb86fc33; }
+        #camera-list li:hover { background-color: rgba(255,255,255,0.1); }
+        #camera-list li.active { background-color: rgba(255,103,0,0.15); border-left: 3px solid var(--accent-color); }
         .cam-name { font-weight: bold; font-size: 1.1em; }
-        .cam-desc { font-size: 0.8em; color: #aaa; margin-top: 5px; }
+        .cam-desc { font-size: 0.8em; color: var(--accent-color); margin-top: 5px; }
 
-        /* Main Content */
-        #main-header { display: flex; padding: 10px; background: var(--header-color); border-bottom: 1px solid var(--border-color); }
-        .tab-btn { padding: 10px 20px; background: var(--button-bg); border: 1px solid var(--border-color); color: white; cursor: pointer; }
-        .tab-btn.active { background: var(--accent-color); color: #000; font-weight: bold; }
-        
-        .tab-content { flex-grow: 1; display: none; overflow-y: auto; }
-        .tab-content.active { display: block; }
-
-        /* Live View Tab */
-        #live-view-content { height: 100%; display: flex; justify-content: center; align-items: center; background: #000; }
-        #video-player, #img-viewer { max-width: 100%; max-height: 100%; display: none; object-fit: contain; }
-        #loading-msg { font-size: 1.5em; color: #888; }
-        
-        /* Timelapse Tab */
-        #timelapse-view-content { padding: 20px; }
-        .tl-section { background: var(--sidebar-bg); padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        .tl-section h2 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; }
-
-        #tl-timeline-container { position: relative; height: 120px; }
-        #tl-timeline { position: relative; width: 100%; height: 10px; background: var(--timeline-bg); border-radius: 5px; top: 50px; }
-        .tl-handle { position: absolute; width: 20px; height: 20px; background: var(--timeline-handle); border-radius: 50%; top: 45px; cursor: ew-resize; }
-        .tl-preview { position: absolute; bottom: 30px; width: 160px; height: 90px; background: #000; border: 2px solid var(--timeline-handle); display: none; }
-        #tl-preview-start { transform: translateX(-50%); }
-        #tl-preview-end { transform: translateX(-50%); }
-        #tl-time-labels { display: flex; justify-content: space-between; font-size: 0.9em; color: #aaa; margin-top: 50px; }
-
-        #tl-video-list li {
-            background: #2a2a2a; padding: 10px; border-radius: 4px; margin-bottom: 10px;
-            display: flex; justify-content: space-between; align-items: center;
+        #controls { padding: 15px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 10px; }
+        .btn {
+            background-color: var(--button-bg); color: white; border: none; padding: 10px;
+            border-radius: 5px; cursor: pointer; font-size: 1em; text-align: center;
         }
-        .video-meta span { margin-right: 15px; font-size: 0.9em; color: #ccc; }
+        .btn:hover { background-color: #3a6a8e; }
+
+        /* Tab bar between sidebar and content */
+        #tab-bar {
+            display: flex; background: var(--header-color); border-bottom: 1px solid var(--border-color);
+        }
+        .tab-btn {
+            flex: 1; padding: 12px; background: transparent; border: none; border-bottom: 3px solid transparent;
+            color: rgba(255,255,255,0.7); cursor: pointer; font-size: 1em; text-align: center; transition: all 0.2s;
+        }
+        .tab-btn:hover { color: white; background: rgba(255,255,255,0.08); }
+        .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: bold; }
+
+        #right-panel { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+
+        /* Live View */
+        #live-view {
+            flex-grow: 1; display: flex; justify-content: center; align-items: center;
+            background-color: #000; position: relative;
+        }
+        #video-player { width: 100%; height: 100%; display: none; object-fit: contain; }
+        #img-viewer { max-width: 100%; max-height: 100%; display: none; object-fit: contain; }
+
+        /* PTZ Controls Overlay */
+        #ptz-overlay {
+            position: absolute; bottom: 30px; right: 30px;
+            display: grid; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 50px);
+            gap: 5px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 50%;
+            display: none;
+        }
+        .ptz-btn {
+            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4);
+            color: white; border-radius: 5px; cursor: pointer; display: flex; justify-content: center; align-items: center; font-size: 1.2em;
+        }
+        .ptz-btn:active { background: var(--accent-color); }
+        #ptz-up { grid-column: 2; grid-row: 1; }
+        #ptz-left { grid-column: 1; grid-row: 2; }
+        #ptz-right { grid-column: 3; grid-row: 2; }
+        #ptz-down { grid-column: 2; grid-row: 3; }
+        #ptz-zin { grid-column: 1; grid-row: 1; font-size: 0.9em; }
+        #ptz-zout { grid-column: 3; grid-row: 1; font-size: 0.9em; }
+
+        /* Timelapse View */
+        #timelapse-view {
+            flex-grow: 1; overflow-y: auto; overflow-x: hidden; padding: 20px; display: none; min-width: 0;
+        }
+        .tl-section {
+            background: var(--sidebar-bg); padding: 20px; border-radius: 8px; margin-bottom: 20px;
+            border: 1px solid var(--border-color); min-width: 0; overflow: hidden;
+        }
+        .tl-section h2 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; font-size: 1.1em; }
+        #tl-no-cam { text-align: center; color: var(--accent-color); padding: 60px 20px; font-size: 1.2em; }
+        #tl-cam-content { display: none; }
+
+        /* Capture controls */
+        .tl-capture-row { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; }
+        .tl-toggle { position: relative; width: 44px; height: 24px; cursor: pointer; }
+        .tl-toggle input { display: none; }
+        .tl-toggle-slider {
+            position: absolute; inset: 0; background: #555; border-radius: 12px; transition: 0.3s;
+        }
+        .tl-toggle-slider::before {
+            content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px;
+            background: white; border-radius: 50%; transition: 0.3s;
+        }
+        .tl-toggle input:checked + .tl-toggle-slider { background: var(--accent-color); }
+        .tl-toggle input:checked + .tl-toggle-slider::before { transform: translateX(20px); }
+        .tl-capture-label { font-size: 0.95em; }
+        .tl-capture-label .status { font-size: 0.8em; color: var(--accent-color); margin-left: 8px; }
+        .tl-capture-label .status.active { color: #4caf50; }
+        .tl-interval-input { width: 70px; padding: 5px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: white; border-radius: 4px; font-size: 0.9em; }
+        #tl-no-frames { color: var(--accent-color); padding: 20px 0; text-align: center; }
+
+        /* Timeline */
+        #tl-timeline-wrapper { display: none; margin-top: 15px; }
+        #tl-timeline-container { position: relative; margin: 10px 0; }
+        #tl-filmstrip { display: flex; gap: 2px; height: 70px; margin-bottom: 10px; overflow: hidden; width: 100%; min-width: 0; }
+        .tl-filmstrip-frame {
+            flex: 1 1 0%; min-width: 0; height: 100%; background: #111;
+            object-fit: cover; border-radius: 2px; opacity: 0.85; transition: opacity 0.2s;
+        }
+        .tl-filmstrip-frame:hover { opacity: 1; }
+        .tl-filmstrip-frame.tl-selected { border: 2px solid var(--accent-color); opacity: 1; }
+        #tl-track-row { position: relative; height: 30px; margin: 0 9px; }
+        #tl-timeline-track { position: absolute; width: 100%; height: 8px; background: #556; border-radius: 4px; top: 11px; }
+        #tl-timeline-fill { position: absolute; height: 100%; background: var(--accent-color); border-radius: 4px; opacity: 0.4; }
+        .tl-handle {
+            position: absolute; width: 18px; height: 18px; background: var(--accent-color);
+            border-radius: 50%; top: 6px; cursor: ew-resize; z-index: 5;
+            border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+        }
+        #tl-time-labels { display: flex; justify-content: space-between; font-size: 0.85em; color: var(--accent-color); margin-top: 5px; }
+
+        .tl-controls { display: flex; align-items: center; gap: 15px; margin-top: 15px; }
+        .tl-controls label { color: var(--accent-color); font-size: 0.9em; }
+        .tl-controls input[type=number] { width: 60px; padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: white; border-radius: 4px; }
+        .tl-controls .btn { padding: 8px 20px; }
+        #tl-frame-info { color: var(--accent-color); font-size: 0.85em; margin-left: auto; }
+        #tl-generate-status { color: var(--accent-color); font-size: 0.9em; margin-top: 10px; display: none; }
+
+        /* Video list */
+        #tl-video-list { list-style: none; padding: 0; margin: 0; }
+        #tl-video-list li {
+            background: rgba(255,255,255,0.05); padding: 12px 15px; border-radius: 6px; margin-bottom: 8px;
+            display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+            border: 1px solid transparent; transition: all 0.2s;
+        }
+        #tl-video-list li:hover { border-color: var(--border-color); background: rgba(255,255,255,0.08); }
+        #tl-video-list li.playing { border-color: var(--accent-color); }
+        .video-info { flex-grow: 1; }
+        .video-name { font-weight: bold; font-size: 0.95em; }
+        .video-meta { font-size: 0.8em; color: var(--accent-color); margin-top: 4px; }
+        .video-meta span { margin-right: 12px; }
+        .video-actions { display: flex; gap: 8px; }
+        .video-actions .btn { padding: 6px 12px; font-size: 0.85em; }
+        .btn-download { background: transparent; border: 1px solid var(--border-color); text-decoration: none; }
+        .btn-download:hover { border-color: #888; }
+        #tl-video-player { width: 100%; display: none; margin-bottom: 15px; border-radius: 6px; background: #000; }
+
+        /* Screensaver Mode */
+        #screensaver-mode {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #000; z-index: 100; display: none;
+        }
+        .ss-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 1s ease-in-out; }
+        #ss-img-a { z-index: 1; opacity: 1; }
+        #ss-img-b { z-index: 2; opacity: 0; }
+        #ss-video { z-index: 3; display: none; width: 100%; height: 100%; object-fit: contain; }
+
+        #ss-overlay {
+            position: absolute; bottom: 50px; left: 50px; z-index: 10;
+            background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px;
+            color: white; min-width: 250px; transition: all 1s ease-in-out;
+        }
+        #ss-clock { font-size: 4em; font-weight: bold; margin: 0; line-height: 1; }
+        #ss-date { font-size: 1.5em; color: #ccc; margin: 5px 0 15px 0; }
+        #ss-data-chip { font-size: 1.2em; color: var(--accent-color); background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 5px; display: inline-block;}
+
+        /* Settings Modal */
+        #settings-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 200; display: none;
+            justify-content: center; align-items: center;
+        }
+        .modal-content { background: var(--bg-color); padding: 30px; border-radius: 10px; width: 400px; border: 1px solid var(--border-color); }
+        .modal-content h2 { margin-top: 0; color: var(--accent-color); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: var(--accent-color); }
+        .form-group select, .form-group input { width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: white; border-radius: 4px;}
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+        #loading-msg { position: absolute; font-size: 1.5em; color: var(--accent-color); }
     </style>
 </head>
 <body>
 
-    <div id="sidebar">
-        <div id="header"><h1>Thingino Viewer</h1></div>
-        <ul id="camera-list"></ul>
-    </div>
-
-    <div id="main-container">
-        <div id="main-header">
-            <button class="tab-btn active" data-tab="live">Live View</button>
-            <button class="tab-btn" data-tab="timelapse">Time-lapse</button>
+    <div id="normal-mode">
+        <div id="sidebar">
+            <div id="header"><img src="/web/logo.png" alt="3 Bad Dogs"></div>
+            <ul id="camera-list"></ul>
+            <div id="controls">
+                <button class="btn" id="btn-screensaver">Start Screensaver</button>
+                <button class="btn" id="btn-settings">Settings</button>
+            </div>
         </div>
-        
-        <div id="live-view-content" class="tab-content active">
-            <div id="loading-msg">Select a camera to begin</div>
-            <video id="video-player" controls autoplay muted playsinline></video>
-            <img id="img-viewer" alt="Camera Stream">
-        </div>
+        <div id="right-panel">
+            <div id="tab-bar">
+                <button class="tab-btn active" data-tab="live">Live View</button>
+                <button class="tab-btn" data-tab="timelapse">Time-lapse</button>
+            </div>
+            <div id="live-view">
+                <div id="loading-msg">Loading cameras...</div>
+                <video id="video-player" controls autoplay muted playsinline></video>
+                <img id="img-viewer" src="" alt="Camera Stream">
 
-        <div id="timelapse-view-content" class="tab-content">
-            <div id="tl-cam-select-msg">Select a camera from the sidebar to see its time-lapse options.</div>
-            <div id="tl-cam-content" style="display:none;">
-                <div class="tl-section">
-                    <h2 id="tl-header">Time-lapse for...</h2>
-                    <div id="tl-timeline-container">
-                        <div id="tl-timeline">
-                            <div class="tl-handle" id="tl-handle-start"></div>
-                            <div class="tl-handle" id="tl-handle-end"></div>
-                            <img id="tl-preview-start" class="tl-preview">
-                            <img id="tl-preview-end" class="tl-preview">
-                        </div>
-                        <div id="tl-time-labels">
-                            <span id="tl-label-start"></span>
-                            <span id="tl-label-end"></span>
-                        </div>
-                    </div>
-                     <div class="tl-controls">
-                        <label for="tl-fps">FPS:</label>
-                        <input type="number" id="tl-fps" value="24" min="1" max="60">
-                        <button class="btn" id="btn-generate-tl">Generate Video</button>
-                    </div>
+                <div id="ptz-overlay">
+                    <div class="ptz-btn" id="ptz-zin" data-dir="zoomIn">Z+</div>
+                    <div class="ptz-btn" id="ptz-up" data-dir="up">&#9650;</div>
+                    <div class="ptz-btn" id="ptz-zout" data-dir="zoomOut">Z-</div>
+                    <div class="ptz-btn" id="ptz-left" data-dir="left">&#9664;</div>
+                    <div class="ptz-btn" id="ptz-right" data-dir="right">&#9654;</div>
+                    <div class="ptz-btn" id="ptz-down" data-dir="down">&#9660;</div>
                 </div>
+            </div>
 
-                <div class="tl-section">
-                    <h2>Generated Videos</h2>
-                    <video id="tl-video-player" style="width:100%; display:none; margin-bottom:20px;" controls></video>
-                    <ul id="tl-video-list"></ul>
+            <div id="timelapse-view">
+                <div id="tl-no-cam">Select a camera from the sidebar to view its time-lapse data.</div>
+                <div id="tl-cam-content">
+                    <div class="tl-section">
+                        <h2 id="tl-header">Time-lapse Builder</h2>
+
+                        <div class="tl-capture-row">
+                            <label class="tl-toggle">
+                                <input type="checkbox" id="tl-capture-enabled">
+                                <span class="tl-toggle-slider"></span>
+                            </label>
+                            <span class="tl-capture-label">
+                                Capture snapshots
+                                <span id="tl-capture-status" class="status"></span>
+                            </span>
+                            <label style="color:#9ab; font-size:0.9em; margin-left:auto;">Interval (sec):</label>
+                            <input type="number" id="tl-capture-interval" class="tl-interval-input" value="60" min="10" max="3600">
+                        </div>
+
+                        <div id="tl-summary"></div>
+
+                        <div id="tl-no-frames">No frames captured for this camera yet. Enable capture above to start.</div>
+
+                        <div id="tl-timeline-wrapper">
+                            <div id="tl-timeline-container">
+                                <div id="tl-filmstrip"></div>
+                                <div id="tl-track-row">
+                                    <div id="tl-timeline-track">
+                                        <div id="tl-timeline-fill"></div>
+                                    </div>
+                                    <div class="tl-handle" id="tl-handle-start"></div>
+                                    <div class="tl-handle" id="tl-handle-end"></div>
+                                </div>
+                                <div id="tl-time-labels">
+                                    <span id="tl-label-start"></span>
+                                    <span id="tl-label-end"></span>
+                                </div>
+                            </div>
+                            <div class="tl-controls">
+                                <label for="tl-fps">FPS:</label>
+                                <input type="number" id="tl-fps" value="24" min="1" max="60">
+                                <button class="btn" id="btn-generate-tl">Generate Video</button>
+                                <span id="tl-frame-info"></span>
+                            </div>
+                            <div id="tl-generate-status"></div>
+                        </div>
+                    </div>
+
+                    <div class="tl-section">
+                        <h2>Generated Videos</h2>
+                        <video id="tl-video-player" controls></video>
+                        <ul id="tl-video-list"></ul>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <div id="screensaver-mode">
+        <img id="ss-img-a" class="ss-layer" src="">
+        <img id="ss-img-b" class="ss-layer" src="">
+        <video id="ss-video" autoplay muted playsinline></video>
+
+        <div id="ss-overlay">
+            <div id="ss-clock">12:00 PM</div>
+            <div id="ss-date">Monday, January 1</div>
+            <div id="ss-data-chip">Waiting for data...</div>
+        </div>
+    </div>
+
+    <div id="settings-modal">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <div class="form-group">
+                <label>Screensaver Mode</label>
+                <select id="set-ss-mode">
+                    <option value="photo">Photo Frame</option>
+                    <option value="cycle">Camera Cycle</option>
+                    <option value="video">Live Video (Select below)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Target Camera (for Video mode)</label>
+                <select id="set-ss-cam"></select>
+            </div>
+            <div class="form-group">
+                <label>Photo Interval (seconds)</label>
+                <input type="number" id="set-photo-int" value="30">
+            </div>
+            <div class="modal-actions">
+                <button class="btn" id="btn-save-settings">Save & Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        const state = { cameras: {}, activeCam: null, hls: null, imgInterval: null };
-        const els = { /* DOM elements loaded in init */ };
+        // State
+        const state = {
+            cameras: {},
+            camNames: [],
+            activeCam: null,
+            activeMode: null,
+            activeTab: 'live',
+            hls: null,
+            ws: null,
+            mse: null,
+            imgInterval: null,
+            ssActive: false,
+            ssFront: 'a',
+            ssTimer: null,
+            ssDataTimer: null,
+            ssClockTimer: null,
+            ssBounceTimer: null,
+            ssCamIdx: 0,
+            haEndpoints: ['/ha/weather', '/ha/event', '/ha/thermostat', '/ha/forecast'],
+            haIdx: 0,
+            overlayPos: { x: 50, y: 50, dx: 1, dy: 0.7 },
+            // Timelapse
+            tlSummary: [],
+            tlDragging: null,
+            tlStartPct: 0,
+            tlEndPct: 1,
+        };
 
-        async function init() {
-            // Cache all DOM elements
-            const allIds = [...document.querySelectorAll('[id]')].forEach(el => els[el.id] = el);
+        // DOM Elements
+        const els = {
+            camList: document.getElementById('camera-list'),
+            loading: document.getElementById('loading-msg'),
+            video: document.getElementById('video-player'),
+            img: document.getElementById('img-viewer'),
+            ptzOverlay: document.getElementById('ptz-overlay'),
+            liveView: document.getElementById('live-view'),
+            timelapseView: document.getElementById('timelapse-view'),
+            ssMode: document.getElementById('screensaver-mode'),
+            normMode: document.getElementById('normal-mode'),
+            ssImgA: document.getElementById('ss-img-a'),
+            ssImgB: document.getElementById('ss-img-b'),
+            ssVideo: document.getElementById('ss-video'),
+            ssClock: document.getElementById('ss-clock'),
+            ssDate: document.getElementById('ss-date'),
+            ssChip: document.getElementById('ss-data-chip'),
+            ssOverlay: document.getElementById('ss-overlay'),
+            settingsModal: document.getElementById('settings-modal'),
+            setSsMode: document.getElementById('set-ss-mode'),
+            setSsCam: document.getElementById('set-ss-cam'),
+            setPhotoInt: document.getElementById('set-photo-int'),
+            // Timelapse
+            tlNoCam: document.getElementById('tl-no-cam'),
+            tlCamContent: document.getElementById('tl-cam-content'),
+            tlHeader: document.getElementById('tl-header'),
+            tlSummary: document.getElementById('tl-summary'),
+            tlNoFrames: document.getElementById('tl-no-frames'),
+            tlTimelineWrapper: document.getElementById('tl-timeline-wrapper'),
+            tlTrackRow: document.getElementById('tl-track-row'),
+            tlTrack: document.getElementById('tl-timeline-track'),
+            tlFill: document.getElementById('tl-timeline-fill'),
+            tlHandleStart: document.getElementById('tl-handle-start'),
+            tlHandleEnd: document.getElementById('tl-handle-end'),
+            tlFilmstrip: document.getElementById('tl-filmstrip'),
+            tlLabelStart: document.getElementById('tl-label-start'),
+            tlLabelEnd: document.getElementById('tl-label-end'),
+            tlFps: document.getElementById('tl-fps'),
+            tlFrameInfo: document.getElementById('tl-frame-info'),
+            tlGenerateStatus: document.getElementById('tl-generate-status'),
+            tlVideoPlayer: document.getElementById('tl-video-player'),
+            tlVideoList: document.getElementById('tl-video-list'),
+            tlCaptureEnabled: document.getElementById('tl-capture-enabled'),
+            tlCaptureInterval: document.getElementById('tl-capture-interval'),
+            tlCaptureStatus: document.getElementById('tl-capture-status'),
+        };
 
-            try {
-                const res = await fetch('/camera/all_info');
-                const camInfo = await res.json();
-                camInfo.forEach(c => state.cameras[c.name] = c);
-                renderSidebar();
-            } catch (err) {
-                els.loadingMsg.textContent = 'Error connecting to server.';
-            }
+        // Load Settings
+        let settings = { mode: 'photo', camera: '', interval: 30 };
+        try {
+            const saved = localStorage.getItem('3bad_settings');
+            if (saved) settings = { ...settings, ...JSON.parse(saved) };
+        } catch(e) {}
 
-            els.mainHeader.addEventListener('click', e => {
-                if (e.target.matches('.tab-btn')) {
-                    switchTab(e.target.dataset.tab);
-                }
-            });
-        }
+        // --- Tab Switching ---
+        document.getElementById('tab-bar').addEventListener('click', e => {
+            if (!e.target.matches('.tab-btn')) return;
+            const tab = e.target.dataset.tab;
+            switchTab(tab);
+        });
 
-        function renderSidebar() {
-            els.cameraList.innerHTML = Object.values(state.cameras).map(cam => `
-                <li data-name="${cam.name}">
-                    <div class="cam-name">${cam.name}</div>
-                    <div class="cam-desc">
-                        ${cam.snapshot ? 'Snapshot' : ''} ${cam.snapshot && cam.stream ? ' | ' : ''} ${cam.stream ? 'Stream' : ''}
-                    </div>
-                </li>
-            `).join('');
-            
-            els.cameraList.addEventListener('click', e => {
-                const li = e.target.closest('li');
-                if (li) selectCamera(li.dataset.name);
-            });
-        }
-        
-        function selectCamera(name) {
-            if (!name || state.activeCam === name) return;
-            state.activeCam = name;
-            document.querySelectorAll('#camera-list li').forEach(li => li.classList.toggle('active', li.dataset.name === name));
-            
-            // Refresh content of the currently active tab
-            const activeTab = document.querySelector('.tab-btn.active').dataset.tab;
-            switchTab(activeTab, true);
-        }
-
-        function switchTab(tabId, forceRefresh = false) {
-            if (!state.activeCam && tabId !== 'live') {
-                alert("Please select a camera first.");
-                return;
-            }
-
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.toggle('active', content.id === `${tabId}-view-content`));
-            
-            cleanupPlayer();
-            if (tabId === 'live') {
-                loadLiveView();
+        function switchTab(tab) {
+            state.activeTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            renderSidebar();
+            if (tab === 'live') {
+                els.liveView.style.display = 'flex';
+                els.timelapseView.style.display = 'none';
+                if (state.activeCam) selectCamera(state.activeCam, state.activeMode);
             } else {
-                loadTimelapseView();
+                els.liveView.style.display = 'none';
+                els.timelapseView.style.display = 'block';
+                cleanupPlayer();
+                if (state.activeCam) selectCamera(state.activeCam, 'timelapse');
+                else if (state.camNames.length) selectCamera(state.camNames[0], 'timelapse');
             }
         }
-        
-        function loadLiveView() {
-            if (!state.activeCam) {
-                els.loadingMsg.textContent = "Select a camera to begin";
+
+        // --- Init ---
+        async function init() {
+            try {
+                const res = await fetch('/camera/list', {credentials: 'same-origin'});
+                if (!res.ok) throw new Error(res.status);
+                state.camNames = await res.json();
+
+                els.loading.textContent = 'Loading info...';
+
+                for (const name of state.camNames) {
+                    const iRes = await fetch(`/camera/${name}/info`, {credentials: 'same-origin'});
+                    if (iRes.ok) {
+                        state.cameras[name] = await iRes.json();
+                        if (state.cameras[name].stream) {
+                            const s = state.cameras[name].stream;
+                            if (s.startsWith('/')) {
+                                state.cameras[name].stream = window.location.origin + s;
+                            } else if (window.location.protocol === 'https:' && s.startsWith('http://')) {
+                                try {
+                                    const u = new URL(s);
+                                    state.cameras[name].stream = window.location.origin + u.pathname + u.search;
+                                } catch(e) {}
+                            }
+                        }
+                    }
+                }
+
+                renderSidebar();
+                populateSettingsCams();
+                els.loading.style.display = 'none';
+
+                let restored = false;
+                try {
+                    const last = JSON.parse(localStorage.getItem('3bad_lastCam'));
+                    if (last && state.sidebarItems.find(i => i.name === last.name && i.mode === last.mode)) {
+                        selectCamera(last.name, last.mode);
+                        restored = true;
+                    }
+                } catch(e) {}
+                if (!restored && state.sidebarItems && state.sidebarItems.length > 0) {
+                    selectCamera(state.sidebarItems[0].name, state.sidebarItems[0].mode);
+                }
+            } catch (err) {
+                els.loading.textContent = 'Auth Required or Server Error';
+            }
+        }
+
+        // --- Normal Mode ---
+        function renderSidebar() {
+            els.camList.innerHTML = '';
+            state.sidebarItems = [];
+
+            if (state.activeTab === 'timelapse') {
+                // Timelapse: one entry per camera, no mode suffix
+                state.camNames.forEach(name => {
+                    const li = document.createElement('li');
+                    li.dataset.name = name;
+                    li.dataset.mode = 'timelapse';
+                    li.innerHTML = `<div class="cam-name">${name}</div>`;
+                    li.onclick = () => selectCamera(name, 'timelapse');
+                    els.camList.appendChild(li);
+                    state.sidebarItems.push({name, mode: 'timelapse'});
+                });
+            } else {
+                // Live view: separate jpg/hls entries
+                state.camNames.forEach(name => {
+                    const cam = state.cameras[name];
+                    if (!cam) return;
+
+                    if (cam.snapshot) {
+                        const li = document.createElement('li');
+                        li.dataset.name = name;
+                        li.dataset.mode = 'jpg';
+                        const ptz = cam.ptz ? ' + PTZ' : '';
+                        li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(jpg)${ptz}</div>`;
+                        li.onclick = () => selectCamera(name, 'jpg');
+                        els.camList.appendChild(li);
+                        state.sidebarItems.push({name, mode: 'jpg'});
+                    }
+
+                    if (cam.stream) {
+                        const li = document.createElement('li');
+                        li.dataset.name = name;
+                        li.dataset.mode = 'hls';
+                        const ptz = cam.ptz ? ' + PTZ' : '';
+                        li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(hls)${ptz}</div>`;
+                        li.onclick = () => selectCamera(name, 'hls');
+                        els.camList.appendChild(li);
+                        state.sidebarItems.push({name, mode: 'hls'});
+                    }
+                });
+            }
+        }
+
+        function selectCamera(name, mode) {
+            state.activeCam = name;
+            state.activeMode = mode || 'jpg';
+            const cam = state.cameras[name];
+
+            try { localStorage.setItem('3bad_lastCam', JSON.stringify({name, mode: state.activeMode})); } catch(e) {}
+
+            document.querySelectorAll('#camera-list li').forEach(li => {
+                const match = state.activeTab === 'timelapse'
+                    ? li.dataset.name === name
+                    : li.dataset.name === name && li.dataset.mode === state.activeMode;
+                li.classList.toggle('active', match);
+            });
+
+            if (state.activeTab === 'timelapse') {
+                loadTimelapseView();
                 return;
             }
-            els.loadingMsg.style.display = 'none';
-            const cam = state.cameras[state.activeCam];
-            
-            if (cam.stream) { // Prioritize stream for live view
-                els.videoPlayer.style.display = 'block';
-                if (Hls.isSupported()) {
-                    state.hls = new Hls();
-                    state.hls.loadSource(cam.stream);
-                    state.hls.attachMedia(els.videoPlayer);
+
+            cleanupPlayer();
+
+            if (state.activeMode === 'hls' && cam.stream) {
+                els.video.style.display = 'block';
+                const streamUrl = new URL(cam.stream);
+                const src = streamUrl.searchParams.get('src');
+                if (src) {
+                    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProto}//${window.location.host}/api/ws?src=${src}`;
+                    startMseStream(els.video, wsUrl);
+                } else {
+                    if (Hls.isSupported()) {
+                        state.hls = new Hls();
+                        state.hls.loadSource(cam.stream);
+                        state.hls.attachMedia(els.video);
+                        state.hls.on(Hls.Events.MANIFEST_PARSED, () => els.video.play());
+                        state.hls.on(Hls.Events.ERROR, (e, data) => { console.error('HLS Error:', data.type, data.details, data.url || ''); });
+                    } else if (els.video.canPlayType('application/vnd.apple.mpegurl')) {
+                        els.video.src = cam.stream;
+                        els.video.addEventListener('loadedmetadata', () => els.video.play());
+                    }
                 }
-            } else if (cam.snapshot) {
-                els.imgViewer.style.display = 'block';
-                const updateImg = () => { els.imgViewer.src = `/camera/${state.activeCam}?t=${Date.now()}`; };
+            } else {
+                els.img.style.display = 'block';
+                const updateImg = () => { els.img.src = `/camera/${name}?t=${Date.now()}`; };
                 updateImg();
                 state.imgInterval = setInterval(updateImg, 1000);
             }
+
+            els.ptzOverlay.style.display = cam.ptz ? 'grid' : 'none';
         }
-        
+
         function cleanupPlayer() {
-            els.videoPlayer.style.display = 'none'; els.videoPlayer.pause();
-            els.imgViewer.style.display = 'none';
+            els.video.style.display = 'none';
+            els.video.pause();
+            els.img.style.display = 'none';
             if (state.hls) { state.hls.destroy(); state.hls = null; }
+            if (state.ws) { state.ws.close(); state.ws = null; }
+            if (state.mse) {
+                if (state.mse.readyState === 'open') {
+                    try { state.mse.endOfStream(); } catch(e) {}
+                }
+                state.mse = null;
+            }
+            if (els.video.src) {
+                URL.revokeObjectURL(els.video.src);
+                els.video.removeAttribute('src');
+                els.video.load();
+            }
             if (state.imgInterval) { clearInterval(state.imgInterval); state.imgInterval = null; }
         }
-        
-        // --- Timelapse View ---
-        async function loadTimelapseView() {
-            els.tlCamSelectMsg.style.display = 'none';
-            els.tlCamContent.style.display = 'block';
-            els.tlHeader.textContent = `Time-lapse for ${state.activeCam}`;
-            els.tlVideoList.innerHTML = '<li>Loading videos...</li>';
-            
-            const [videosRes, summaryRes] = await Promise.all([
-                fetch(`/timelapse/videos?camera=${state.activeCam}`), // Assuming future filtering
-                fetch(`/timelapse/summary`) // Get summary for all to find range
-            ]);
 
-            const videos = await videosRes.json();
-            const summary = await summaryRes.json();
+        // --- MSE WebSocket (go2rtc) ---
+        function startMseStream(videoEl, wsUrl) {
+            const ms = new MediaSource();
+            videoEl.src = URL.createObjectURL(ms);
+            state.mse = ms;
 
-            renderVideoList(videos);
-            setupTimeline(summary);
+            ms.addEventListener('sourceopen', () => {
+                const ws = new WebSocket(wsUrl);
+                ws.binaryType = 'arraybuffer';
+                state.ws = ws;
+                let sb = null;
+                let queue = [];
+                let appending = false;
+
+                function appendNext() {
+                    if (sb && !sb.updating && queue.length > 0) {
+                        appending = true;
+                        sb.appendBuffer(queue.shift());
+                    } else {
+                        appending = false;
+                    }
+                }
+
+                ws.onmessage = (ev) => {
+                    if (typeof ev.data === 'string') {
+                        const msg = JSON.parse(ev.data);
+                        if (msg.type === 'mse') {
+                            const codec = msg.value;
+                            try {
+                                sb = ms.addSourceBuffer(codec);
+                                sb.mode = 'segments';
+                                sb.addEventListener('updateend', () => {
+                                    appendNext();
+                                    if (videoEl.paused) videoEl.play().catch(()=>{});
+                                });
+                            } catch(e) {
+                                console.error('MSE addSourceBuffer failed:', codec, e);
+                            }
+                        }
+                    } else {
+                        queue.push(ev.data);
+                        if (!appending) appendNext();
+                    }
+                };
+
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({type: 'mse'}));
+                };
+
+                ws.onerror = (e) => console.error('MSE WS error:', e);
+                ws.onclose = () => {
+                    if (state.ws === ws) state.ws = null;
+                };
+            });
         }
 
+        // --- PTZ ---
+        document.querySelectorAll('.ptz-btn').forEach(btn => {
+            const sendPtz = (action) => {
+                if (!state.activeCam) return;
+                fetch(`/camera/${state.activeCam}/ptz`, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: action, direction: btn.dataset.dir, speed: 1.0 })
+                });
+            };
+            btn.addEventListener('mousedown', () => sendPtz('move'));
+            btn.addEventListener('mouseup', () => sendPtz('stop'));
+            btn.addEventListener('mouseleave', () => sendPtz('stop'));
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); sendPtz('move'); });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); sendPtz('stop'); });
+        });
+
+        // --- Timelapse View ---
+        async function loadTimelapseView() {
+            if (!state.activeCam) {
+                els.tlNoCam.style.display = 'block';
+                els.tlCamContent.style.display = 'none';
+                return;
+            }
+            els.tlNoCam.style.display = 'none';
+            els.tlCamContent.style.display = 'block';
+            els.tlHeader.textContent = `Time-lapse: ${state.activeCam}`;
+
+            // Load capture config for this camera
+            try {
+                const cfgRes = await fetch(`/timelapse/config?camera=${state.activeCam}`);
+                if (cfgRes.ok) {
+                    const cfg = await cfgRes.json();
+                    els.tlCaptureEnabled.checked = cfg.enabled || false;
+                    els.tlCaptureInterval.value = cfg.interval || 60;
+                    els.tlCaptureStatus.textContent = cfg.enabled ? 'capturing' : 'disabled';
+                    els.tlCaptureStatus.className = 'status' + (cfg.enabled ? ' active' : '');
+                } else {
+                    els.tlCaptureEnabled.checked = false;
+                    els.tlCaptureInterval.value = 60;
+                    els.tlCaptureStatus.textContent = 'disabled';
+                    els.tlCaptureStatus.className = 'status';
+                }
+            } catch(e) {
+                els.tlCaptureEnabled.checked = false;
+                els.tlCaptureInterval.value = 60;
+                els.tlCaptureStatus.textContent = 'disabled';
+                els.tlCaptureStatus.className = 'status';
+            }
+
+            // Load summary and videos
+            let summary = [], videos = [];
+            try {
+                const [summaryRes, videosRes] = await Promise.all([
+                    fetch('/timelapse/summary'),
+                    fetch('/timelapse/videos')
+                ]);
+                if (summaryRes.ok) summary = await summaryRes.json();
+                if (videosRes.ok) videos = await videosRes.json();
+            } catch(e) {
+                console.error('Failed to load timelapse data:', e);
+            }
+
+            const camSummary = summary.find(s => s.camera_name === state.activeCam);
+            if (camSummary && camSummary.frame_count > 0) {
+                els.tlSummary.innerHTML = `<span style="color:var(--accent-color)">${camSummary.frame_count} frames &mdash; ${new Date(camSummary.first_snapshot_timestamp).toLocaleString()} to ${new Date(camSummary.last_snapshot_timestamp).toLocaleString()}</span>`;
+                els.tlNoFrames.style.display = 'none';
+                els.tlTimelineWrapper.style.display = 'block';
+                setupTimeline(camSummary);
+            } else {
+                els.tlSummary.innerHTML = '';
+                els.tlNoFrames.style.display = 'block';
+                els.tlTimelineWrapper.style.display = 'none';
+            }
+
+            renderVideoList(videos);
+        }
+
+        // Autosave capture config on any change
+        let _saveTimer = null;
+        function saveCaptureConfig() {
+            if (!state.activeCam) return;
+            clearTimeout(_saveTimer);
+            const delay = document.activeElement === els.tlCaptureInterval ? 800 : 100;
+            _saveTimer = setTimeout(async () => {
+                const enabled = els.tlCaptureEnabled.checked;
+                const interval = parseInt(els.tlCaptureInterval.value, 10) || 60;
+                els.tlCaptureStatus.textContent = 'saving...';
+                els.tlCaptureStatus.className = 'status';
+                try {
+                    const res = await fetch('/timelapse/config', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ camera: state.activeCam, enabled, interval })
+                    });
+                    if (res.ok) {
+                        els.tlCaptureStatus.textContent = enabled ? 'capturing' : 'disabled';
+                        els.tlCaptureStatus.className = 'status' + (enabled ? ' active' : '');
+                        // Wait a moment for first frame capture, then refresh view
+                        if (enabled) {
+                            setTimeout(() => loadTimelapseView(), 3000);
+                        }
+                    } else {
+                        els.tlCaptureStatus.textContent = 'error ' + res.status;
+                        els.tlCaptureStatus.className = 'status';
+                    }
+                } catch(e) {
+                    els.tlCaptureStatus.textContent = 'save failed';
+                    els.tlCaptureStatus.className = 'status';
+                    console.error('Save timelapse config failed:', e);
+                }
+            }, delay);
+        }
+        els.tlCaptureEnabled.addEventListener('change', saveCaptureConfig);
+        els.tlCaptureInterval.addEventListener('input', saveCaptureConfig);
+
+        async function setupTimeline(camSummary) {
+            const startTime = new Date(camSummary.first_snapshot_timestamp).getTime();
+            let endTime = new Date(camSummary.last_snapshot_timestamp).getTime();
+            if (endTime <= startTime) endTime = startTime + 1000;
+            state.tlTimeStart = startTime;
+            state.tlTimeEnd = endTime;
+            state.tlStartPct = 0;
+            state.tlEndPct = 1;
+
+            // Fetch actual frame list from server
+            let allFrames = [];
+            try {
+                const res = await fetch(`/timelapse/frames?camera=${encodeURIComponent(state.activeCam)}`);
+                if (res.ok) allFrames = await res.json();
+            } catch(e) { console.error('Failed to fetch frame list:', e); }
+
+            // Build filmstrip: pick every Nth frame to fill available width
+            els.tlFilmstrip.innerHTML = '';
+            const containerWidth = els.tlFilmstrip.parentElement.offsetWidth || 600;
+            const frameWidth = 90;
+            const slots = Math.max(1, Math.floor(containerWidth / frameWidth));
+            const total = allFrames.length;
+            const count = Math.min(slots, total);
+
+            if (count > 0) {
+                const step = total <= count ? 1 : (total - 1) / (count - 1 || 1);
+                for (let i = 0; i < count; i++) {
+                    const idx = Math.min(Math.round(i * step), total - 1);
+                    const ts = allFrames[idx];
+                    const img = document.createElement('img');
+                    img.className = 'tl-filmstrip-frame';
+                    img.loading = 'lazy';
+                    img.src = `/timelapse/frame?camera=${encodeURIComponent(state.activeCam)}&timestamp=${ts}`;
+                    els.tlFilmstrip.appendChild(img);
+                }
+            }
+
+            updateTimelineUI();
+        }
+
+        function updateTimelineUI() {
+            const sp = state.tlStartPct;
+            const ep = state.tlEndPct;
+            const range = state.tlTimeEnd - state.tlTimeStart;
+
+            els.tlHandleStart.style.left = `calc(${sp * 100}% - 9px)`;
+            els.tlHandleEnd.style.left = `calc(${ep * 100}% - 9px)`;
+            els.tlFill.style.left = (sp * 100) + '%';
+            els.tlFill.style.width = ((ep - sp) * 100) + '%';
+
+            const startTs = new Date(state.tlTimeStart + range * sp);
+            const endTs = new Date(state.tlTimeStart + range * ep);
+            els.tlLabelStart.textContent = startTs.toLocaleString();
+            els.tlLabelEnd.textContent = endTs.toLocaleString();
+
+            const spanMs = endTs - startTs;
+            const spanHrs = (spanMs / 3600000).toFixed(1);
+            els.tlFrameInfo.textContent = `Selected: ${spanHrs}h span`;
+        }
+
+        // Timeline drag
+        function initTimelineDrag(handleEl, which) {
+            const onMove = (clientX) => {
+                const rect = els.tlTrackRow.getBoundingClientRect();
+                let pct = (clientX - rect.left) / rect.width;
+                pct = Math.max(0, Math.min(1, pct));
+                if (which === 'start') {
+                    state.tlStartPct = Math.min(pct, state.tlEndPct - 0.01);
+                } else {
+                    state.tlEndPct = Math.max(pct, state.tlStartPct + 0.01);
+                }
+                updateTimelineUI();
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', mouseMove);
+                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('touchmove', touchMove);
+                document.removeEventListener('touchend', onUp);
+            };
+            const mouseMove = (e) => onMove(e.clientX);
+            const touchMove = (e) => onMove(e.touches[0].clientX);
+
+            handleEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                document.addEventListener('mousemove', mouseMove);
+                document.addEventListener('mouseup', onUp);
+            });
+            handleEl.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                document.addEventListener('touchmove', touchMove);
+                document.addEventListener('touchend', onUp);
+            });
+        }
+        initTimelineDrag(els.tlHandleStart, 'start');
+        initTimelineDrag(els.tlHandleEnd, 'end');
+
+        // Generate timelapse
+        document.getElementById('btn-generate-tl').addEventListener('click', async () => {
+            if (!state.activeCam || !state.tlTimeStart) return;
+            const range = state.tlTimeEnd - state.tlTimeStart;
+            const startTs = new Date(state.tlTimeStart + range * state.tlStartPct).toISOString().replace('T', ' ').split('.')[0];
+            const endTs = new Date(state.tlTimeStart + range * state.tlEndPct).toISOString().replace('T', ' ').split('.')[0];
+            const fps = parseInt(els.tlFps.value, 10) || 24;
+
+            els.tlGenerateStatus.style.display = 'block';
+            els.tlGenerateStatus.textContent = 'Generating video... this may take a moment.';
+
+            try {
+                const res = await fetch('/timelapse/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        cameras: [state.activeCam],
+                        start_time: startTs,
+                        end_time: endTs,
+                        fps: fps
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    els.tlGenerateStatus.textContent = 'Error: ' + err;
+                    return;
+                }
+                const result = await res.json();
+                els.tlGenerateStatus.textContent = 'Video generated successfully!';
+                setTimeout(() => { els.tlGenerateStatus.style.display = 'none'; }, 3000);
+                // Refresh video list
+                const videosRes = await fetch('/timelapse/videos');
+                renderVideoList(await videosRes.json());
+            } catch(e) {
+                els.tlGenerateStatus.textContent = 'Error generating video: ' + e.message;
+            }
+        });
+
         function renderVideoList(videos) {
-            if (videos.length === 0) {
-                els.tlVideoList.innerHTML = '<li>No videos generated for this camera yet.</li>';
+            if (!videos || videos.length === 0) {
+                els.tlVideoList.innerHTML = '<li style="color:var(--accent-color); cursor:default">No videos generated yet.</li>';
                 return;
             }
             els.tlVideoList.innerHTML = videos.map(v => {
-                const [start, end] = v.filename.replace('-timelapse.mp4', '').split('-to-');
-                const niceName = `From ${new Date(start.replace('_', ' ')).toLocaleString()} to ${new Date(end.replace('_', ' ')).toLocaleString()}`;
-                const wallClockDuration = new Date(end.replace('_', ' ')) - new Date(start.replace('_', ' '));
-                const wallClockFormatted = new Date(wallClockDuration).toISOString().substr(11, 8);
-                const runtimeFormatted = new Date(v.duration_seconds * 1000).toISOString().substr(11, 8);
+                const parts = v.filename.replace('-timelapse.mp4', '').split('-to-');
+                let niceName = v.filename;
+                let wallClockStr = '';
+                try {
+                    const startDt = new Date(parts[0].replace(/_/g, ' ').replace(/-/g, (m, offset) => offset <= 10 ? '-' : ':'));
+                    const endDt = new Date(parts[1].replace(/_/g, ' ').replace(/-/g, (m, offset) => offset <= 10 ? '-' : ':'));
+                    niceName = startDt.toLocaleString() + ' to ' + endDt.toLocaleString();
+                    const spanMs = endDt - startDt;
+                    const spanH = Math.floor(spanMs / 3600000);
+                    const spanM = Math.floor((spanMs % 3600000) / 60000);
+                    wallClockStr = spanH > 0 ? `${spanH}h ${spanM}m` : `${spanM}m`;
+                } catch(e) {}
 
-                return `<li>
-                    <div>
-                        <strong>${niceName}</strong>
+                const durSec = Math.round(v.duration_seconds || 0);
+                const durM = Math.floor(durSec / 60);
+                const durS = durSec % 60;
+                const runtime = `${durM}:${String(durS).padStart(2, '0')}`;
+
+                return `<li data-url="/timelapse/videos/${v.filename}">
+                    <div class="video-info">
+                        <div class="video-name">${niceName}</div>
                         <div class="video-meta">
-                            <span>Duration: ${runtimeFormatted}</span>
-                            <span>Span: ${wallClockFormatted}</span>
-                            <span>Size: ${v.size_mb} MB</span>
+                            <span>Runtime: ${runtime}</span>
+                            ${wallClockStr ? `<span>Span: ${wallClockStr}</span>` : ''}
+                            <span>${v.size_mb} MB</span>
                         </div>
                     </div>
-                    <div>
-                        <button class="btn btn-play" data-url="/timelapse/videos/${v.filename}">Play</button>
-                        <a href="/timelapse/videos/${v.filename}" class="btn" download>Download</a>
+                    <div class="video-actions">
+                        <button class="btn btn-play">Play</button>
+                        <a href="/timelapse/videos/${v.filename}" class="btn btn-download" download>Download</a>
                     </div>
                 </li>`;
             }).join('');
         }
-        
-        document.getElementById('tl-video-list').addEventListener('click', e => {
-            if (e.target.matches('.btn-play')) {
-                els.tlVideoPlayer.src = e.target.dataset.url;
-                els.tlVideoPlayer.style.display = 'block';
-                els.tlVideoPlayer.play();
-            }
+
+        els.tlVideoList.addEventListener('click', e => {
+            const playBtn = e.target.closest('.btn-play');
+            if (!playBtn) return;
+            e.stopPropagation();
+            const li = playBtn.closest('li');
+            const url = li.dataset.url;
+            if (!url) return;
+
+            document.querySelectorAll('#tl-video-list li').forEach(l => l.classList.remove('playing'));
+            li.classList.add('playing');
+
+            els.tlVideoPlayer.src = url;
+            els.tlVideoPlayer.style.display = 'block';
+            els.tlVideoPlayer.play();
         });
-        
-        // Timeline setup and other functions will go here...
-        // This is a simplified placeholder for the timeline logic
-        function setupTimeline(summary) {
-             const camSummary = summary.find(c => c.camera_name === state.activeCam);
-             if(!camSummary) {
-                 els.tlLabelStart.textContent = "No frames captured";
-                 els.tlLabelEnd.textContent = "";
-                 return;
-             }
-             // Basic timeline label setup
-             els.tlLabelStart.textContent = new Date(camSummary.first_snapshot_timestamp).toLocaleString();
-             els.tlLabelEnd.textContent = new Date(camSummary.last_snapshot_timestamp).toLocaleString();
+
+        // --- Screensaver ---
+        document.getElementById('btn-screensaver').onclick = startScreensaver;
+        els.ssMode.onclick = stopScreensaver;
+
+        function startScreensaver() {
+            state.ssActive = true;
+            els.normMode.style.display = 'none';
+            els.ssMode.style.display = 'block';
+            document.body.style.cursor = 'none';
+
+            cleanupPlayer();
+
+            if (settings.mode === 'video' && settings.camera && state.cameras[settings.camera]?.stream) {
+                els.ssVideo.style.display = 'block';
+                const stream = state.cameras[settings.camera].stream;
+                try {
+                    const streamUrl = new URL(stream);
+                    const src = streamUrl.searchParams.get('src');
+                    if (src) {
+                        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                        const wsUrl = `${wsProto}//${window.location.host}/api/ws?src=${src}`;
+                        startMseStream(els.ssVideo, wsUrl);
+                    }
+                } catch(e) {
+                    console.error('Screensaver video error:', e);
+                }
+            } else {
+                els.ssImgA.style.opacity = 1;
+                els.ssImgB.style.opacity = 0;
+                loadSsImage();
+                state.ssTimer = setInterval(loadSsImage, settings.interval * 1000);
+            }
+
+            updateClock();
+            fetchHaData();
+            state.ssClockTimer = setInterval(updateClock, 10000);
+            state.ssDataTimer = setInterval(fetchHaData, 60000);
+            state.ssBounceTimer = setInterval(bounceOverlay, 50);
         }
+
+        function stopScreensaver() {
+            state.ssActive = false;
+            els.normMode.style.display = 'flex';
+            els.ssMode.style.display = 'none';
+            document.body.style.cursor = 'default';
+
+            clearInterval(state.ssTimer);
+            clearInterval(state.ssClockTimer);
+            clearInterval(state.ssDataTimer);
+            clearInterval(state.ssBounceTimer);
+
+            els.ssVideo.style.display = 'none';
+            els.ssVideo.pause();
+            if (state.hls) { state.hls.destroy(); state.hls = null; }
+            if (state.ws) { state.ws.close(); state.ws = null; }
+
+            if (state.activeCam) selectCamera(state.activeCam, state.activeMode);
+        }
+
+        function loadSsImage() {
+            let url = `/random?w=${window.innerWidth}&h=${window.innerHeight}&t=${Date.now()}`;
+            if (settings.mode === 'cycle' && state.camNames.length > 0) {
+                const cam = state.camNames[state.ssCamIdx];
+                url = `/camera/${cam}?t=${Date.now()}`;
+                state.ssCamIdx = (state.ssCamIdx + 1) % state.camNames.length;
+            }
+
+            const backImg = state.ssFront === 'a' ? els.ssImgB : els.ssImgA;
+            const frontImg = state.ssFront === 'a' ? els.ssImgA : els.ssImgB;
+
+            backImg.onload = () => {
+                backImg.style.opacity = 1;
+                frontImg.style.opacity = 0;
+                state.ssFront = state.ssFront === 'a' ? 'b' : 'a';
+            };
+            backImg.src = url;
+        }
+
+        function updateClock() {
+            const d = new Date();
+            let h = d.getHours();
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const m = d.getMinutes().toString().padStart(2, '0');
+            els.ssClock.textContent = `${h}:${m} ${ampm}`;
+
+            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            els.ssDate.textContent = `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+        }
+
+        async function fetchHaData() {
+            const ep = state.haEndpoints[state.haIdx];
+            state.haIdx = (state.haIdx + 1) % state.haEndpoints.length;
+            try {
+                const res = await fetch(`${ep}?t=${Date.now()}`);
+                if (res.ok) {
+                    const text = await res.text();
+                    if (text) els.ssChip.textContent = text;
+                }
+            } catch (e) {}
+        }
+
+        function bounceOverlay() {
+            const maxW = window.innerWidth - els.ssOverlay.offsetWidth - 20;
+            const maxH = window.innerHeight - els.ssOverlay.offsetHeight - 20;
+
+            state.overlayPos.x += state.overlayPos.dx;
+            state.overlayPos.y += state.overlayPos.dy;
+
+            if (state.overlayPos.x <= 20 || state.overlayPos.x >= maxW) state.overlayPos.dx *= -1;
+            if (state.overlayPos.y <= 20 || state.overlayPos.y >= maxH) state.overlayPos.dy *= -1;
+
+            state.overlayPos.x = Math.max(20, Math.min(state.overlayPos.x, maxW));
+            state.overlayPos.y = Math.max(20, Math.min(state.overlayPos.y, maxH));
+
+            els.ssOverlay.style.transform = `translate(${state.overlayPos.x}px, ${state.overlayPos.y}px)`;
+        }
+
+        // --- Settings ---
+        document.getElementById('btn-settings').onclick = () => {
+            els.setSsMode.value = settings.mode;
+            els.setSsCam.value = settings.camera || (state.camNames[0] || '');
+            els.setPhotoInt.value = settings.interval;
+            els.settingsModal.style.display = 'flex';
+        };
+
+        function populateSettingsCams() {
+            els.setSsCam.innerHTML = '';
+            state.camNames.forEach(name => {
+                if (state.cameras[name]?.stream) {
+                    const opt = document.createElement('option');
+                    opt.value = name; opt.textContent = name;
+                    els.setSsCam.appendChild(opt);
+                }
+            });
+        }
+
+        document.getElementById('btn-save-settings').onclick = () => {
+            settings.mode = els.setSsMode.value;
+            settings.camera = els.setSsCam.value;
+            settings.interval = parseInt(els.setPhotoInt.value, 10) || 30;
+            localStorage.setItem('3bad_settings', JSON.stringify(settings));
+            els.settingsModal.style.display = 'none';
+        };
 
         init();
     </script>
