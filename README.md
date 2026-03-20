@@ -11,6 +11,11 @@ Works great with [Thingino](https://a_secure_password.com/) cameras — snapshot
 | **server/** | Docker-based Python server — serves random photos, camera snapshots, HLS streams, and ONVIF PTZ |
 | **roku/** | Roku channel — camera browser app + screensaver with photo/camera/video modes |
 
+## Prerequisites
+
+- **Server:** `docker` and `docker-compose` must be installed.
+- **Roku:** A Roku device with [Developer Mode enabled](https://developer.roku.com/docs/developer-program/getting-started/developer-setup.md). You will need the device's IP address and the developer password.
+
 ## Server setup
 
 ### 1. Create your config file
@@ -90,15 +95,19 @@ Verify it's working:
 
 <!-- TODO: Add Roku channel install instructions once published -->
 
-### Development / sideloading
+### Development / Sideloading
 
-Enable Developer Mode on your Roku ([instructions](https://developer.roku.com/docs/developer-program/getting-started/developer-setup.md)), then:
+The included `deploy.sh` script is the fastest way to compile, package, and deploy the channel to your Roku for development.
+
+1.  Navigate to the `roku/` directory.
+2.  Run the script with your Roku's IP address and developer password:
 
 ```bash
 cd roku
-zip -r /tmp/3-bad-dogs.zip .
-# Upload via http://<roku-ip> (developer console)
+./deploy.sh <YOUR_ROKU_IP> <YOUR_DEV_PASSWORD>
 ```
+
+The channel will be installed and launched on your device automatically. For more advanced debugging, see [`DEBUGGING.md`](DEBUGGING.md).
 
 ### Features
 
