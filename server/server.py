@@ -815,8 +815,90 @@ class PhotoHandler(BaseHTTPRequestHandler):
 
         if path.endswith("/ptz") and path.startswith("/camera/"):
             self.handle_ptz(path)
+        elif path == "/timelapse/generate":
+            self.handle_timelapse_generate()
         else:
             self.send_error(404)
+
+    def handle_timelapse_generate(self):
+        """Handle a request to generate a new timelapse video."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        cameras = data.get("cameras", [])
+        start_time_str = data.get("start_time")
+        end_time_str = data.get("end_time")
+        fps = int(data.get("fps", 10))
+
+        if not cameras or not start_time_str or not end_time_str:
+            self.send_error(400, "Missing required parameters")
+            return
+
+        # --- Frame filtering and collection ---
+        all_frames = []
+        for cam_name in cameras:
+            cam_dir = os.path.join(TIMELAPSE_STORAGE_PATH, cam_name)
+            try:
+                for fname in os.listdir(cam_dir):
+                    if fname.endswith(".jpg"):
+                        # Filename format: YYYY-MM-DD_HH-MM-SS.jpg
+                        # Compare as strings for simplicity
+                        f_ts = fname.replace("_", " ").replace(".jpg", "")
+                        if start_time_str <= f_ts <= end_time_str:
+                            all_frames.append(os.path.join(cam_dir, fname))
+            except FileNotFoundError:
+                continue # Camera directory may not exist
+        
+        if not all_frames:
+            self.send_error(404, "No frames found in the specified time range")
+            return
+            
+        all_frames.sort()
+
+        # --- FFmpeg execution ---
+        video_dir = os.path.join(TIMELAPSE_STORAGE_PATH, "videos")
+        os.makedirs(video_dir, exist_ok=True)
+        output_filename = f"timelapse_{int(time.time())}.mp4"
+        output_path = os.path.join(video_dir, output_filename)
+        
+        # Create a temporary file with the list of input frames
+        input_list_path = os.path.join(video_dir, "input_list.txt")
+        with open(input_list_path, "w") as f:
+            for frame_path in all_frames:
+                f.write(f"file '{frame_path}'\n")
+
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", input_list_path,
+                    "-r", str(fps),
+                    "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+                    output_path
+                ],
+                check=True, capture_output=True, timeout=300 # 5 min timeout
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            print(f"ERROR: ffmpeg failed: {e.stderr.decode() if e.stderr else e}")
+            self.send_error(500, "Failed to generate video")
+            return
+        finally:
+            os.remove(input_list_path)
+
+        # --- Respond with success ---
+        result = json.dumps({"video_url": f"/timelapse/videos/{output_filename}"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(result)))
+        self.end_headers()
+        self.wfile.write(result)
+
 
     def handle_ptz(self, path):
         name = path[len("/camera/"):].rsplit("/ptz", 1)[0]
@@ -878,6 +960,12 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.proxy_frigate(parsed)
         elif path.startswith("/ha/"):
             self.serve_ha(path)
+        elif path == "/timelapse/summary":
+            self.serve_timelapse_summary()
+        elif path == "/timelapse/videos":
+            self.serve_timelapse_video_list()
+        elif path.startswith("/timelapse/videos/"):
+            self.serve_timelapse_video(path)
         elif path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -885,6 +973,84 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         else:
             self.send_error(404)
+
+    def serve_timelapse_summary(self):
+        """Serve a summary of available timelapse frames for each camera."""
+        summary = []
+        try:
+            for cam_name in os.listdir(TIMELAPSE_STORAGE_PATH):
+                cam_dir = os.path.join(TIMELAPSE_STORAGE_PATH, cam_name)
+                if not os.path.isdir(cam_dir):
+                    continue
+                
+                frames = sorted([f for f in os.listdir(cam_dir) if f.endswith(".jpg")])
+                if not frames:
+                    continue
+
+                summary.append({
+                    "camera_name": cam_name,
+                    "frame_count": len(frames),
+                    "first_snapshot_timestamp": frames[0].replace("_", " ").replace(".jpg", ""),
+                    "last_snapshot_timestamp": frames[-1].replace("_", " ").replace(".jpg", ""),
+                })
+        except FileNotFoundError:
+            pass # No timelapse data yet, return empty list
+        except Exception as e:
+            print(f"ERROR: failed to generate timelapse summary: {e}")
+            self.send_error(500, "Failed to generate timelapse summary")
+            return
+
+        data = json.dumps(summary).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_timelapse_video_list(self):
+        """Serve a list of generated timelapse videos."""
+        videos = []
+        video_dir = os.path.join(TIMELAPSE_STORAGE_PATH, "videos")
+        try:
+            videos = sorted(
+                [f for f in os.listdir(video_dir) if f.endswith(".mp4")],
+                reverse=True
+            )
+        except FileNotFoundError:
+            pass # No videos yet
+        
+        data = json.dumps(videos).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_timelapse_video(self, path):
+        """Serve a single timelapse video file."""
+        filename = path.split("/")[-1]
+        file_path = os.path.join(TIMELAPSE_STORAGE_PATH, "videos", filename)
+
+        if not os.path.isfile(file_path):
+            self.send_error(404, "Video not found")
+            return
+        
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            print(f"ERROR: failed to serve video '{file_path}': {e}")
+            self.send_error(500, "Failed to serve video")
 
     def serve_ha(self, path):
         handlers = {
@@ -1073,6 +1239,11 @@ if __name__ == "__main__":
         daemon_threads = True
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), PhotoHandler)
+
+    # Start the timelapse capture service if configured
+    timelapse_capturer = TimelapseCapturer(_CAMERAS)
+    timelapse_capturer.start()
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:

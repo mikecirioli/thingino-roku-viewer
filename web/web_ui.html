@@ -3,205 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3 Bad Dogs - Camera Viewer</title>
+    <title>Thingino Roku Viewer</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         :root {
-            --bg-color: #1a1a2e;
-            --sidebar-bg: #162447;
-            --text-color: #e0e0e0;
-            --header-color: #1f4068;
-            --accent-color: #e43f5a;
-            --border-color: #333;
-            --button-bg: #0f3460;
+            --bg-color: #1a1a2e; --sidebar-bg: #162447; --text-color: #e0e0e0;
+            --header-color: #1f4068; --accent-color: #e43f5a; --border-color: #333;
+            --button-bg: #0f3460; --timeline-bg: #1f4068; --timeline-handle: #e43f5a;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-            user-select: none;
+            margin: 0; background-color: var(--bg-color); color: var(--text-color);
+            display: flex; height: 100vh; overflow: hidden; user-select: none;
         }
+        .view-mode { display: none; width: 100%; height: 100%; }
+        .view-mode.active { display: flex; }
         
-        /* Normal Mode Layout */
-        #normal-mode { display: flex; width: 100%; height: 100%; }
+        /* Sidebar */
         #sidebar {
-            width: 250px;
-            background-color: var(--sidebar-bg);
-            border-right: 1px solid var(--border-color);
-            display: flex;
-            flex-direction: column;
-            z-index: 10;
+            width: 250px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color);
+            display: flex; flex-direction: column; z-index: 10;
         }
         #header { padding: 20px; background-color: var(--header-color); text-align: center; }
         #header h1 { margin: 0; font-size: 1.5em; color: var(--accent-color); }
         #camera-list { list-style: none; padding: 0; margin: 0; flex-grow: 1; overflow-y: auto; }
         #camera-list li {
-            padding: 15px 20px;
-            cursor: pointer;
-            border-bottom: 1px solid #ffffff15;
-            display: flex;
-            flex-direction: column;
+            padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #ffffff15;
+            display: flex; flex-direction: column;
         }
         #camera-list li:hover, #camera-list li.active { background-color: #ffffff20; }
         .cam-name { font-weight: bold; font-size: 1.1em; }
         .cam-desc { font-size: 0.8em; color: #aaa; margin-top: 5px; }
         
+        /* Main Content */
+        #main-content { flex-grow: 1; display: flex; justify-content: center; align-items: center; background-color: #000; position: relative; }
+        #video-player, #img-viewer { max-width: 100%; max-height: 100%; display: none; object-fit: contain; }
+        #loading-msg { position: absolute; font-size: 1.5em; color: #888; }
+        
+        /* Controls */
         #controls { padding: 15px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 10px; }
         .btn {
             background-color: var(--button-bg); color: white; border: none; padding: 10px;
             border-radius: 5px; cursor: pointer; font-size: 1em; text-align: center;
         }
         .btn:hover { background-color: #1a5b9e; }
+        .tabs { display: flex; margin-bottom: 10px; }
+        .tab-btn { flex: 1; padding: 10px; background: #222; border: 1px solid #555; color: white; cursor: pointer; }
+        .tab-btn.active { background: var(--button-bg); }
 
-        #main-content {
-            flex-grow: 1; display: flex; justify-content: center; align-items: center;
-            background-color: #000; position: relative;
-        }
-        #video-player { width: 100%; height: 100%; display: none; object-fit: contain; }
-        #img-viewer { max-width: 100%; max-height: 100%; display: none; object-fit: contain; }
+        /* Timelapse View */
+        #timelapse-mode { flex-direction: column; padding: 20px; gap: 20px; overflow-y: auto;}
+        .tl-section { background: var(--sidebar-bg); padding: 15px; border-radius: 8px; }
+        .tl-section h2 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; }
+        #tl-cam-list label { display: block; margin-bottom: 5px; cursor: pointer; }
+        .tl-cam-info { font-size: 0.8em; color: #aaa; margin-left: 20px; }
         
-        /* PTZ Controls Overlay */
-        #ptz-overlay {
-            position: absolute; bottom: 30px; right: 30px;
-            display: grid; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 50px);
-            gap: 5px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 50%;
-            display: none;
-        }
-        .ptz-btn {
-            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4);
-            color: white; border-radius: 5px; cursor: pointer; display: flex; justify-content: center; align-items: center; font-size: 1.2em;
-        }
-        .ptz-btn:active { background: var(--accent-color); }
-        #ptz-up { grid-column: 2; grid-row: 1; }
-        #ptz-left { grid-column: 1; grid-row: 2; }
-        #ptz-right { grid-column: 3; grid-row: 2; }
-        #ptz-down { grid-column: 2; grid-row: 3; }
-        #ptz-zin { grid-column: 1; grid-row: 1; font-size: 0.9em; }
-        #ptz-zout { grid-column: 3; grid-row: 1; font-size: 0.9em; }
+        #tl-timeline-container { height: 60px; display: flex; align-items: center; }
+        #tl-timeline { position: relative; width: 100%; height: 10px; background: var(--timeline-bg); border-radius: 5px; }
+        #tl-timeline-selection { position: absolute; height: 100%; background: var(--accent-color); opacity: 0.7; }
+        .tl-handle { position: absolute; width: 20px; height: 20px; background: var(--timeline-handle); border-radius: 50%; top: -5px; cursor: ew-resize; }
+        #tl-time-labels { display: flex; justify-content: space-between; font-size: 0.8em; color: #aaa; margin-top: 5px; }
+        
+        .tl-controls { display: flex; gap: 20px; align-items: center; }
+        .tl-controls label { font-weight: bold; }
+        #tl-fps { width: 60px; }
+        
+        #tl-output-video { max-width: 100%; border: 1px solid var(--border-color); }
+        #tl-video-container a { color: var(--accent-color); }
 
-        /* Screensaver Mode */
-        #screensaver-mode {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #000; z-index: 100; display: none;
-        }
-        .ss-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 1s ease-in-out; }
-        #ss-img-a { z-index: 1; opacity: 1; }
-        #ss-img-b { z-index: 2; opacity: 0; }
-        #ss-video { z-index: 3; display: none; width: 100%; height: 100%; object-fit: contain; }
-        
-        /* Overlay Data */
-        #ss-overlay {
-            position: absolute; bottom: 50px; left: 50px; z-index: 10;
-            background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px;
-            color: white; min-width: 250px; transition: all 1s ease-in-out;
-        }
-        #ss-clock { font-size: 4em; font-weight: bold; margin: 0; line-height: 1; }
-        #ss-date { font-size: 1.5em; color: #ccc; margin: 5px 0 15px 0; }
-        #ss-data-chip { font-size: 1.2em; color: var(--accent-color); background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 5px; display: inline-block;}
-
-        /* Settings Modal */
-        #settings-modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); z-index: 200; display: none;
-            justify-content: center; align-items: center;
-        }
-        .modal-content { background: var(--bg-color); padding: 30px; border-radius: 10px; width: 400px; border: 1px solid var(--border-color); }
-        .modal-content h2 { margin-top: 0; color: var(--accent-color); }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; color: #aaa; }
-        .form-group select, .form-group input { width: 100%; padding: 8px; background: #222; border: 1px solid #555; color: white; border-radius: 4px;}
-        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-        
-        #loading-msg { position: absolute; font-size: 1.5em; color: #888; }
     </style>
 </head>
 <body>
 
-    <div id="normal-mode">
-        <div id="sidebar">
-            <div id="header"><h1>3 Bad Dogs</h1></div>
-            <ul id="camera-list"></ul>
-            <div id="controls">
-                <button class="btn" id="btn-screensaver">Start Screensaver</button>
-                <button class="btn" id="btn-settings">Settings</button>
+    <div id="sidebar">
+        <div id="header"><h1>Thingino Viewer</h1></div>
+        <div id="view-container">
+            <div id="live-mode" class="view-mode active">
+                <ul id="camera-list"></ul>
+            </div>
+            <div id="timelapse-mode" class="view-mode">
+                <div class="tl-section">
+                    <h2>1. Select Cameras</h2>
+                    <div id="tl-cam-list">Loading...</div>
+                </div>
+                <div class="tl-section">
+                    <h2>2. Select Time Window</h2>
+                    <div id="tl-timeline-container">
+                        <div id="tl-timeline">
+                            <div id="tl-timeline-selection"></div>
+                            <div class="tl-handle" id="tl-handle-start"></div>
+                            <div class="tl-handle" id="tl-handle-end"></div>
+                        </div>
+                    </div>
+                    <div id="tl-time-labels">
+                        <span id="tl-label-start"></span>
+                        <span id="tl-label-end"></span>
+                    </div>
+                </div>
+                <div class="tl-section">
+                    <h2>3. Generate Video</h2>
+                    <div class="tl-controls">
+                        <label for="tl-fps">FPS:</label>
+                        <input type="number" id="tl-fps" value="24" min="1" max="60">
+                        <button class="btn" id="btn-generate-tl">Generate Video</button>
+                    </div>
+                </div>
+                <div class="tl-section" id="tl-output-section" style="display:none;">
+                    <h2>Output</h2>
+                    <div id="tl-output-status"></div>
+                    <div id="tl-video-container" style="display:none;">
+                        <video id="tl-output-video" controls></video>
+                        <br><a id="tl-download-link" href="#" download>Download Video</a>
+                    </div>
+                </div>
+                 <div class="tl-section">
+                    <h2>Previous Videos</h2>
+                    <ul id="tl-previous-videos"></ul>
+                </div>
             </div>
         </div>
-        <div id="main-content">
-            <div id="loading-msg">Loading cameras...</div>
-            <video id="video-player" controls autoplay muted playsinline></video>
-            <img id="img-viewer" src="" alt="Camera Stream">
-            
-            <div id="ptz-overlay">
-                <div class="ptz-btn" id="ptz-zin" data-dir="zoomIn">Z+</div>
-                <div class="ptz-btn" id="ptz-up" data-dir="up">▲</div>
-                <div class="ptz-btn" id="ptz-zout" data-dir="zoomOut">Z-</div>
-                <div class="ptz-btn" id="ptz-left" data-dir="left">◀</div>
-                <div class="ptz-btn" id="ptz-right" data-dir="right">▶</div>
-                <div class="ptz-btn" id="ptz-down" data-dir="down">▼</div>
+        <div id="controls">
+            <div class="tabs">
+                <button class="tab-btn active" id="tab-live">Live</button>
+                <button class="tab-btn" id="tab-timelapse">Time-lapse</button>
             </div>
+            <button class="btn" id="btn-screensaver">Start Screensaver</button>
+            <button class="btn" id="btn-settings">Settings</button>
         </div>
     </div>
-
-    <div id="screensaver-mode">
-        <img id="ss-img-a" class="ss-layer" src="">
-        <img id="ss-img-b" class="ss-layer" src="">
-        <video id="ss-video" autoplay muted playsinline></video>
-        
-        <div id="ss-overlay">
-            <div id="ss-clock">12:00 PM</div>
-            <div id="ss-date">Monday, January 1</div>
-            <div id="ss-data-chip">Waiting for data...</div>
-        </div>
-    </div>
-
-    <div id="settings-modal">
-        <div class="modal-content">
-            <h2>Settings</h2>
-            <div class="form-group">
-                <label>Screensaver Mode</label>
-                <select id="set-ss-mode">
-                    <option value="photo">Photo Frame</option>
-                    <option value="cycle">Camera Cycle</option>
-                    <option value="video">Live Video (Select below)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Target Camera (for Video mode)</label>
-                <select id="set-ss-cam"></select>
-            </div>
-            <div class="form-group">
-                <label>Photo Interval (seconds)</label>
-                <input type="number" id="set-photo-int" value="30">
-            </div>
-            <div class="modal-actions">
-                <button class="btn" id="btn-save-settings">Save & Close</button>
-            </div>
-        </div>
+    <div id="main-content">
+        <div id="loading-msg">Loading cameras...</div>
+        <video id="video-player" controls autoplay muted playsinline></video>
+        <img id="img-viewer" src="" alt="Camera Stream">
     </div>
 
     <script>
         // State
-        const state = {
-            cameras: {}, // key: name, val: info
-            camNames: [],
-            activeCam: null,
-            hls: null,
-            imgInterval: null,
-            ssActive: false,
-            ssFront: 'a',
-            ssTimer: null,
-            ssDataTimer: null,
-            ssClockTimer: null,
-            ssBounceTimer: null,
-            ssCamIdx: 0,
-            haEndpoints: ['/ha/weather', '/ha/event', '/ha/thermostat', '/ha/forecast'],
-            haIdx: 0,
-            overlayPos: { x: 50, y: 50, dx: 1, dy: 0.7 }
-        };
+        const state = { cameras: {}, camNames: [], activeCam: null, hls: null, imgInterval: null };
 
         // DOM Elements
         const els = {
@@ -209,146 +147,108 @@
             loading: document.getElementById('loading-msg'),
             video: document.getElementById('video-player'),
             img: document.getElementById('img-viewer'),
-            ptzOverlay: document.getElementById('ptz-overlay'),
-            ssMode: document.getElementById('screensaver-mode'),
-            normMode: document.getElementById('normal-mode'),
-            ssImgA: document.getElementById('ss-img-a'),
-            ssImgB: document.getElementById('ss-img-b'),
-            ssVideo: document.getElementById('ss-video'),
-            ssClock: document.getElementById('ss-clock'),
-            ssDate: document.getElementById('ss-date'),
-            ssChip: document.getElementById('ss-data-chip'),
-            ssOverlay: document.getElementById('ss-overlay'),
-            settingsModal: document.getElementById('settings-modal'),
-            setSsMode: document.getElementById('set-ss-mode'),
-            setSsCam: document.getElementById('set-ss-cam'),
-            setPhotoInt: document.getElementById('set-photo-int')
+            sidebar: document.getElementById('sidebar'),
+            mainContent: document.getElementById('main-content'),
+            liveView: document.getElementById('live-mode'),
+            timelapseView: document.getElementById('timelapse-mode'),
+            tl: {
+                camList: document.getElementById('tl-cam-list'),
+                timeline: document.getElementById('tl-timeline'),
+                selection: document.getElementById('tl-timeline-selection'),
+                handleStart: document.getElementById('tl-handle-start'),
+                handleEnd: document.getElementById('tl-handle-end'),
+                labelStart: document.getElementById('tl-label-start'),
+                labelEnd: document.getElementById('tl-label-end'),
+                fps: document.getElementById('tl-fps'),
+                generateBtn: document.getElementById('btn-generate-tl'),
+                outputSection: document.getElementById('tl-output-section'),
+                outputStatus: document.getElementById('tl-output-status'),
+                videoContainer: document.getElementById('tl-video-container'),
+                outputVideo: document.getElementById('tl-output-video'),
+                downloadLink: document.getElementById('tl-download-link'),
+                previousVideos: document.getElementById('tl-previous-videos'),
+            }
         };
-
-        // Load Settings
-        let settings = { mode: 'photo', camera: '', interval: 30 };
-        try {
-            const saved = localStorage.getItem('3bad_settings');
-            if (saved) settings = { ...settings, ...JSON.parse(saved) };
-        } catch(e) {}
 
         // --- Init ---
         async function init() {
             try {
-                const res = await fetch('/camera/list', {credentials: 'same-origin'});
+                const res = await fetch('/camera/all_info');
                 if (!res.ok) throw new Error(res.status);
-                state.camNames = await res.json();
-                
-                els.loading.textContent = 'Loading info...';
-                
-                for (const name of state.camNames) {
-                    const iRes = await fetch(`/camera/${name}/info`, {credentials: 'same-origin'});
-                    if (iRes.ok) {
-                        state.cameras[name] = await iRes.json();
-                        // If served over HTTPS and stream is HTTP, proxy through origin
-                        if (state.cameras[name].stream) {
-                            const s = state.cameras[name].stream;
-                            if (s.startsWith('/')) {
-                                state.cameras[name].stream = window.location.origin + s;
-                            } else if (window.location.protocol === 'https:' && s.startsWith('http://')) {
-                                // Extract path from go2rtc or similar stream URL (e.g. /api/stream.m3u8?src=...)
-                                try {
-                                    const u = new URL(s);
-                                    state.cameras[name].stream = window.location.origin + u.pathname + u.search;
-                                } catch(e) {}
-                            }
-                        }
-                    }
-                }
+                const camInfo = await res.json();
+                camInfo.forEach(c => state.cameras[c.name] = c);
+                state.camNames = Object.keys(state.cameras);
                 
                 renderSidebar();
-                populateSettingsCams();
                 els.loading.style.display = 'none';
-
-                // Restore last camera or default to first
-                let restored = false;
-                try {
-                    const last = JSON.parse(localStorage.getItem('3bad_lastCam'));
-                    if (last && state.sidebarItems.find(i => i.name === last.name && i.mode === last.mode)) {
-                        selectCamera(last.name, last.mode);
-                        restored = true;
-                    }
-                } catch(e) {}
-                if (!restored && state.sidebarItems && state.sidebarItems.length > 0) {
-                    selectCamera(state.sidebarItems[0].name, state.sidebarItems[0].mode);
+                if (state.camNames.length > 0) {
+                    selectCamera(state.camNames[0], state.cameras[state.camNames[0]].snapshot ? 'jpg' : 'hls');
                 }
             } catch (err) {
                 els.loading.textContent = 'Auth Required or Server Error';
             }
         }
 
-        // --- Normal Mode ---
+        // --- View Switching ---
+        document.getElementById('tab-live').onclick = () => switchView('live');
+        document.getElementById('tab-timelapse').onclick = () => switchView('timelapse');
+
+        function switchView(view) {
+            if (view === 'live') {
+                document.getElementById('tab-live').classList.add('active');
+                document.getElementById('tab-timelapse').classList.remove('active');
+                els.liveView.classList.add('active');
+                els.timelapseView.classList.remove('active');
+                els.mainContent.style.display = 'flex';
+                els.sidebar.style.width = '250px';
+
+            } else {
+                document.getElementById('tab-timelapse').classList.add('active');
+                document.getElementById('tab-live').classList.remove('active');
+                els.timelapseView.classList.add('active');
+                els.liveView.classList.remove('active');
+                els.mainContent.style.display = 'none';
+                els.sidebar.style.width = '100%';
+                loadTimelapseSummary();
+            }
+        }
+
+        // --- Live View ---
         function renderSidebar() {
             els.camList.innerHTML = '';
-            state.sidebarItems = [];
             state.camNames.forEach(name => {
                 const cam = state.cameras[name];
-                if (!cam) return;
-
                 if (cam.snapshot) {
                     const li = document.createElement('li');
-                    li.dataset.name = name;
-                    li.dataset.mode = 'jpg';
-                    const ptz = cam.ptz ? ' + PTZ' : '';
-                    li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(jpg)${ptz}</div>`;
+                    li.dataset.name = name; li.dataset.mode = 'jpg';
+                    li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(jpg)</div>`;
                     li.onclick = () => selectCamera(name, 'jpg');
                     els.camList.appendChild(li);
-                    state.sidebarItems.push({name, mode: 'jpg'});
                 }
-
                 if (cam.stream) {
                     const li = document.createElement('li');
-                    li.dataset.name = name;
-                    li.dataset.mode = 'hls';
-                    const ptz = cam.ptz ? ' + PTZ' : '';
-                    li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(hls)${ptz}</div>`;
+                    li.dataset.name = name; li.dataset.mode = 'hls';
+                    li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(hls)</div>`;
                     li.onclick = () => selectCamera(name, 'hls');
                     els.camList.appendChild(li);
-                    state.sidebarItems.push({name, mode: 'hls'});
                 }
             });
         }
 
         function selectCamera(name, mode) {
-            state.activeCam = name;
-            state.activeMode = mode || 'jpg';
-            const cam = state.cameras[name];
-
-            // Remember last selection
-            try { localStorage.setItem('3bad_lastCam', JSON.stringify({name, mode: state.activeMode})); } catch(e) {}
-
-            document.querySelectorAll('#camera-list li').forEach(li => {
-                li.classList.toggle('active', li.dataset.name === name && li.dataset.mode === state.activeMode);
-            });
-
             cleanupPlayer();
-
-            if (state.activeMode === 'hls' && cam.stream) {
+            state.activeCam = name;
+            const cam = state.cameras[name];
+            document.querySelectorAll('#camera-list li').forEach(li => {
+                li.classList.toggle('active', li.dataset.name === name && li.dataset.mode === mode);
+            });
+            
+            if (mode === 'hls' && cam.stream) {
                 els.video.style.display = 'block';
-                // Use go2rtc MSE WebSocket for better codec support
-                const streamUrl = new URL(cam.stream);
-                const src = streamUrl.searchParams.get('src');
-                if (src) {
-                    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${wsProto}//${window.location.host}/api/ws?src=${src}`;
-                    startMseStream(els.video, wsUrl);
-                } else {
-                    // Fallback to HLS for non-go2rtc streams
-                    if (Hls.isSupported()) {
-                        state.hls = new Hls();
-                        state.hls.loadSource(cam.stream);
-                        state.hls.attachMedia(els.video);
-                        state.hls.on(Hls.Events.MANIFEST_PARSED, () => els.video.play());
-                        state.hls.on(Hls.Events.ERROR, (e, data) => { console.error('HLS Error:', data.type, data.details, data.url || ''); });
-                    } else if (els.video.canPlayType('application/vnd.apple.mpegurl')) {
-                        els.video.src = cam.stream;
-                        els.video.addEventListener('loadedmetadata', () => els.video.play());
-                    }
+                if (Hls.isSupported()) {
+                    state.hls = new Hls();
+                    state.hls.loadSource(cam.stream);
+                    state.hls.attachMedia(els.video);
                 }
             } else {
                 els.img.style.display = 'block';
@@ -356,251 +256,155 @@
                 updateImg();
                 state.imgInterval = setInterval(updateImg, 1000);
             }
-
-            els.ptzOverlay.style.display = cam.ptz ? 'grid' : 'none';
         }
 
         function cleanupPlayer() {
-            els.video.style.display = 'none';
-            els.video.pause();
+            els.video.style.display = 'none'; els.video.pause();
             els.img.style.display = 'none';
             if (state.hls) { state.hls.destroy(); state.hls = null; }
-            if (state.ws) { state.ws.close(); state.ws = null; }
-            if (state.mse) {
-                if (state.mse.readyState === 'open') {
-                    try { state.mse.endOfStream(); } catch(e) {}
-                }
-                state.mse = null;
-            }
-            if (els.video.src) {
-                URL.revokeObjectURL(els.video.src);
-                els.video.removeAttribute('src');
-                els.video.load();
-            }
             if (state.imgInterval) { clearInterval(state.imgInterval); state.imgInterval = null; }
         }
 
-        // --- MSE WebSocket (go2rtc) ---
-        function startMseStream(videoEl, wsUrl) {
-            const ms = new MediaSource();
-            videoEl.src = URL.createObjectURL(ms);
-            state.mse = ms;
+        // --- Time-lapse View ---
+        let tlState = { summary: [], minTs: 0, maxTs: 0 };
 
-            ms.addEventListener('sourceopen', () => {
-                const ws = new WebSocket(wsUrl);
-                ws.binaryType = 'arraybuffer';
-                state.ws = ws;
-                let sb = null;
-                let queue = [];
-                let appending = false;
-
-                function appendNext() {
-                    if (sb && !sb.updating && queue.length > 0) {
-                        appending = true;
-                        sb.appendBuffer(queue.shift());
-                    } else {
-                        appending = false;
-                    }
-                }
-
-                ws.onmessage = (ev) => {
-                    if (typeof ev.data === 'string') {
-                        // First text message from go2rtc contains codec info
-                        const msg = JSON.parse(ev.data);
-                        if (msg.type === 'mse') {
-                            const codec = msg.value;
-                            try {
-                                sb = ms.addSourceBuffer(codec);
-                                sb.mode = 'segments';
-                                sb.addEventListener('updateend', () => {
-                                    appendNext();
-                                    // Start playback once we have data
-                                    if (videoEl.paused) videoEl.play().catch(()=>{});
-                                });
-                            } catch(e) {
-                                console.error('MSE addSourceBuffer failed:', codec, e);
-                            }
-                        }
-                    } else {
-                        // Binary data - media segments
-                        queue.push(ev.data);
-                        if (!appending) appendNext();
-                    }
-                };
-
-                ws.onopen = () => {
-                    // go2rtc expects a JSON message to start the stream
-                    ws.send(JSON.stringify({type: 'mse'}));
-                };
-
-                ws.onerror = (e) => console.error('MSE WS error:', e);
-                ws.onclose = () => {
-                    if (state.ws === ws) state.ws = null;
-                };
-            });
-        }
-
-        // --- PTZ ---
-        document.querySelectorAll('.ptz-btn').forEach(btn => {
-            const sendPtz = (action) => {
-                if (!state.activeCam) return;
-                fetch(`/camera/${state.activeCam}/ptz`, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: action, direction: btn.dataset.dir, speed: 1.0 })
-                });
-            };
-            btn.addEventListener('mousedown', () => sendPtz('move'));
-            btn.addEventListener('mouseup', () => sendPtz('stop'));
-            btn.addEventListener('mouseleave', () => sendPtz('stop'));
-            btn.addEventListener('touchstart', (e) => { e.preventDefault(); sendPtz('move'); });
-            btn.addEventListener('touchend', (e) => { e.preventDefault(); sendPtz('stop'); });
-        });
-
-        // --- Screensaver ---
-        document.getElementById('btn-screensaver').onclick = startScreensaver;
-        els.ssMode.onclick = stopScreensaver; // Click anywhere to exit
-
-        function startScreensaver() {
-            state.ssActive = true;
-            els.normMode.style.display = 'none';
-            els.ssMode.style.display = 'block';
-            document.body.style.cursor = 'none';
-            
-            cleanupPlayer();
-            
-            if (settings.mode === 'video' && settings.camera && state.cameras[settings.camera]?.stream) {
-                els.ssVideo.style.display = 'block';
-                const stream = state.cameras[settings.camera].stream;
-                try {
-                    const streamUrl = new URL(stream);
-                    const src = streamUrl.searchParams.get('src');
-                    if (src) {
-                        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                        const wsUrl = `${wsProto}//${window.location.host}/api/ws?src=${src}`;
-                        startMseStream(els.ssVideo, wsUrl);
-                    }
-                } catch(e) {
-                    console.error('Screensaver video error:', e);
-                }
-            } else {
-                els.ssImgA.style.opacity = 1;
-                els.ssImgB.style.opacity = 0;
-                loadSsImage();
-                state.ssTimer = setInterval(loadSsImage, settings.interval * 1000);
-            }
-
-            updateClock();
-            fetchHaData();
-            state.ssClockTimer = setInterval(updateClock, 10000);
-            state.ssDataTimer = setInterval(fetchHaData, 60000);
-            state.ssBounceTimer = setInterval(bounceOverlay, 50);
-        }
-
-        function stopScreensaver() {
-            state.ssActive = false;
-            els.normMode.style.display = 'flex';
-            els.ssMode.style.display = 'none';
-            document.body.style.cursor = 'default';
-            
-            clearInterval(state.ssTimer);
-            clearInterval(state.ssClockTimer);
-            clearInterval(state.ssDataTimer);
-            clearInterval(state.ssBounceTimer);
-            
-            els.ssVideo.style.display = 'none';
-            els.ssVideo.pause();
-            if (state.hls) { state.hls.destroy(); state.hls = null; }
-            if (state.ws) { state.ws.close(); state.ws = null; }
-            
-            if (state.activeCam) selectCamera(state.activeCam);
-        }
-
-        function loadSsImage() {
-            let url = `/random?w=${window.innerWidth}&h=${window.innerHeight}&t=${Date.now()}`;
-            if (settings.mode === 'cycle' && state.camNames.length > 0) {
-                const cam = state.camNames[state.ssCamIdx];
-                url = `/camera/${cam}?t=${Date.now()}`;
-                state.ssCamIdx = (state.ssCamIdx + 1) % state.camNames.length;
-            }
-
-            const backImg = state.ssFront === 'a' ? els.ssImgB : els.ssImgA;
-            const frontImg = state.ssFront === 'a' ? els.ssImgA : els.ssImgB;
-
-            backImg.onload = () => {
-                backImg.style.opacity = 1;
-                frontImg.style.opacity = 0;
-                state.ssFront = state.ssFront === 'a' ? 'b' : 'a';
-            };
-            backImg.src = url;
-        }
-
-        // Overlay Logic
-        function updateClock() {
-            const d = new Date();
-            let h = d.getHours();
-            const ampm = h >= 12 ? 'PM' : 'AM';
-            h = h % 12 || 12;
-            const m = d.getMinutes().toString().padStart(2, '0');
-            els.ssClock.textContent = `${h}:${m} ${ampm}`;
-            
-            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-            const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-            els.ssDate.textContent = `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
-        }
-
-        async function fetchHaData() {
-            const ep = state.haEndpoints[state.haIdx];
-            state.haIdx = (state.haIdx + 1) % state.haEndpoints.length;
+        async function loadTimelapseSummary() {
             try {
-                const res = await fetch(`${ep}?t=${Date.now()}`);
-                if (res.ok) {
-                    const text = await res.text();
-                    if (text) els.ssChip.textContent = text;
+                const res = await fetch('/timelapse/summary');
+                tlState.summary = await res.json();
+                renderTimelapseView();
+                loadPreviousVideos();
+            } catch (e) {
+                els.tl.camList.textContent = 'Could not load time-lapse data.';
+            }
+        }
+        
+        async function loadPreviousVideos() {
+            try {
+                const res = await fetch('/timelapse/videos');
+                const videos = await res.json();
+                els.tl.previousVideos.innerHTML = videos.map(v => `<li><a href="/timelapse/videos/${v}" target="_blank">${v}</a></li>`).join('');
+            } catch(e) { console.error("Could not load previous videos", e)}
+        }
+
+        function renderTimelapseView() {
+            if (tlState.summary.length === 0) {
+                els.tl.camList.innerHTML = 'No snapshots have been captured yet.';
+                return;
+            }
+
+            els.tl.camList.innerHTML = tlState.summary.map(cam => `
+                <label>
+                    <input type="checkbox" class="tl-cam-checkbox" value="${cam.camera_name}">
+                    <strong>${cam.camera_name}</strong>
+                    <div class="tl-cam-info">${cam.frame_count} frames from ${cam.first_snapshot_timestamp} to ${cam.last_snapshot_timestamp}</div>
+                </label>
+            `).join('');
+
+            const allTimestamps = tlState.summary.flatMap(c => [
+                new Date(c.first_snapshot_timestamp).getTime(),
+                new Date(c.last_snapshot_timestamp).getTime()
+            ]);
+            tlState.minTs = Math.min(...allTimestamps);
+            tlState.maxTs = Math.max(...allTimestamps);
+            
+            setupTimeline();
+        }
+
+        function setupTimeline() {
+            const startHandle = els.tl.handleStart;
+            const endHandle = els.tl.handleEnd;
+            const selection = els.tl.selection;
+            
+            let activeHandle = null;
+
+            function updateUI() {
+                const startPos = parseFloat(startHandle.style.left || '0');
+                const endPos = parseFloat(endHandle.style.left || '100');
+                selection.style.left = `${startPos}%`;
+                selection.style.width = `${endPos - startPos}%`;
+                
+                const startTime = new Date(tlState.minTs + (tlState.maxTs - tlState.minTs) * (startPos / 100));
+                const endTime = new Date(tlState.minTs + (tlState.maxTs - tlState.minTs) * (endPos / 100));
+
+                els.tl.labelStart.textContent = startTime.toLocaleString();
+                els.tl.labelEnd.textContent = endTime.toLocaleString();
+            }
+
+            function onMouseMove(e) {
+                if (!activeHandle) return;
+                const rect = els.tl.timeline.getBoundingClientRect();
+                let x = e.clientX - rect.left;
+                let percent = (x / rect.width) * 100;
+                percent = Math.max(0, Math.min(100, percent));
+                
+                if (activeHandle === startHandle) {
+                    const endPos = parseFloat(endHandle.style.left || '100');
+                    if (percent >= endPos) percent = endPos;
+                } else {
+                    const startPos = parseFloat(startHandle.style.left || '0');
+                    if (percent <= startPos) percent = startPos;
                 }
-            } catch (e) {}
+                
+                activeHandle.style.left = `${percent}%`;
+                updateUI();
+            }
+
+            function onMouseUp() { activeHandle = null; }
+
+            startHandle.onmousedown = () => activeHandle = startHandle;
+            endHandle.onmousedown = () => activeHandle = endHandle;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+
+            startHandle.style.left = '0%';
+            endHandle.style.left = '100%';
+            updateUI();
         }
 
-        function bounceOverlay() {
-            const maxW = window.innerWidth - els.ssOverlay.offsetWidth - 20;
-            const maxH = window.innerHeight - els.ssOverlay.offsetHeight - 20;
-            
-            state.overlayPos.x += state.overlayPos.dx;
-            state.overlayPos.y += state.overlayPos.dy;
-            
-            if (state.overlayPos.x <= 20 || state.overlayPos.x >= maxW) state.overlayPos.dx *= -1;
-            if (state.overlayPos.y <= 20 || state.overlayPos.y >= maxH) state.overlayPos.dy *= -1;
-            
-            state.overlayPos.x = Math.max(20, Math.min(state.overlayPos.x, maxW));
-            state.overlayPos.y = Math.max(20, Math.min(state.overlayPos.y, maxH));
-            
-            els.ssOverlay.style.transform = `translate(${state.overlayPos.x}px, ${state.overlayPos.y}px)`;
-        }
+        els.tl.generateBtn.onclick = async () => {
+            const selectedCams = Array.from(document.querySelectorAll('.tl-cam-checkbox:checked')).map(cb => cb.value);
+            if (selectedCams.length === 0) {
+                alert('Please select at least one camera.');
+                return;
+            }
 
-        // --- Settings ---
-        document.getElementById('btn-settings').onclick = () => {
-            els.setSsMode.value = settings.mode;
-            els.setSsCam.value = settings.camera || (state.camNames[0] || '');
-            els.setPhotoInt.value = settings.interval;
-            els.settingsModal.style.display = 'flex';
-        };
+            const startPos = parseFloat(els.tl.handleStart.style.left || '0');
+            const endPos = parseFloat(els.tl.handleEnd.style.left || '100');
+            const startTime = new Date(tlState.minTs + (tlState.maxTs - tlState.minTs) * (startPos / 100));
+            const endTime = new Date(tlState.minTs + (tlState.maxTs - tlState.minTs) * (endPos / 100));
+            
+            const payload = {
+                cameras: selectedCams,
+                start_time: startTime.toISOString().slice(0, 19).replace('T', ' '),
+                end_time: endTime.toISOString().slice(0, 19).replace('T', ' '),
+                fps: parseInt(els.tl.fps.value, 10) || 24
+            };
 
-        function populateSettingsCams() {
-            els.setSsCam.innerHTML = '';
-            state.camNames.forEach(name => {
-                if (state.cameras[name]?.stream) {
-                    const opt = document.createElement('option');
-                    opt.value = name; opt.textContent = name;
-                    els.setSsCam.appendChild(opt);
+            els.tl.outputSection.style.display = 'block';
+            els.tl.videoContainer.style.display = 'none';
+            els.tl.outputStatus.textContent = 'Generating video... this may take a while.';
+            
+            try {
+                const res = await fetch('/timelapse/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    throw new Error(`Server error: ${res.status}`);
                 }
-            });
-        }
+                const result = await res.json();
+                
+                els.tl.outputStatus.textContent = 'Video generated!';
+                els.tl.videoContainer.style.display = 'block';
+                els.tl.outputVideo.src = result.video_url;
+                els.tl.downloadLink.href = result.video_url;
+                loadPreviousVideos();
 
-        document.getElementById('btn-save-settings').onclick = () => {
-            settings.mode = els.setSsMode.value;
-            settings.camera = els.setSsCam.value;
-            settings.interval = parseInt(els.setPhotoInt.value, 10) || 30;
-            localStorage.setItem('3bad_settings', JSON.stringify(settings));
-            els.settingsModal.style.display = 'none';
+            } catch(e) {
+                els.tl.outputStatus.textContent = `Error: ${e.message}. See server logs for details.`;
+            }
         };
 
         init();

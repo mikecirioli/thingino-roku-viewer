@@ -1,16 +1,14 @@
 services:
-  photoframe:
+  thingino-roku-viewer:
     build: .
-    container_name: photoframe-server
+    container_name: thingino-roku-viewer-server
     restart: unless-stopped
     ports:
       - "8099:8099"
     volumes:
-      - /export/homeassistant/media/ciriolisaver/:/media:ro
-      - /export/homeassistant/photoframe-server/web:/web:ro
-      - /export/homeassistant/photoframe-server/config.yaml:/config/cameras.yaml:ro
-      - /export/homeassistant/photoframe-server/packages:/packages
-      - /export/homeassistant/photoframe-server/logs:/logs
+      - ./config.yaml:/config/config.yaml:ro
+      - /path/to/your/photos:/media:ro
+      - ./timelapse_data:/data/timelapse
     environment:
       - REFRESH=30
       - TITLE=

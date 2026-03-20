@@ -31,6 +31,10 @@ cameras:
   #     type: thingino
   #     username: admin
   #     password: front-door
+  #   timelapse:
+  #     enabled: true
+  #     interval: 60  # seconds between snapshots
+
 
   # Camera with snapshot, HLS stream, and PTZ (ONVIF)
   # The Roku app uses HLS for live video, D-pad for PTZ in fullscreen
@@ -46,12 +50,21 @@ cameras:
   #     port: 80
   #     username: thingino
   #     password: thingino
+  #   timelapse:
+  #     enabled: true
+  #     interval: 300 # 5 minutes
 
-  # Stream-only camera (no snapshot URL)
+
   # Stream-only camera (HLS live video, no snapshot)
+  # For timelapse, this one will extract a frame from the HLS stream.
   # camera-3:
   #   stream: http://go2rtc:1984/api/stream.m3u8?src=camera-3_main
   #   stream_type: hls
+  #   timelapse:
+  #     enabled: true
+  #     interval: 10
+  #     source: stream
+
 
   # Basic auth camera (non-thingino)
   # garage:
