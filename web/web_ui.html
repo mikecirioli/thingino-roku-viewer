@@ -265,7 +265,16 @@
                 populateSettingsCams();
                 els.loading.style.display = 'none';
 
-                if (state.sidebarItems && state.sidebarItems.length > 0) {
+                // Restore last camera or default to first
+                let restored = false;
+                try {
+                    const last = JSON.parse(localStorage.getItem('3bad_lastCam'));
+                    if (last && state.sidebarItems.find(i => i.name === last.name && i.mode === last.mode)) {
+                        selectCamera(last.name, last.mode);
+                        restored = true;
+                    }
+                } catch(e) {}
+                if (!restored && state.sidebarItems && state.sidebarItems.length > 0) {
                     selectCamera(state.sidebarItems[0].name, state.sidebarItems[0].mode);
                 }
             } catch (err) {
@@ -309,6 +318,9 @@
             state.activeCam = name;
             state.activeMode = mode || 'jpg';
             const cam = state.cameras[name];
+
+            // Remember last selection
+            try { localStorage.setItem('3bad_lastCam', JSON.stringify({name, mode: state.activeMode})); } catch(e) {}
 
             document.querySelectorAll('#camera-list li').forEach(li => {
                 li.classList.toggle('active', li.dataset.name === name && li.dataset.mode === state.activeMode);

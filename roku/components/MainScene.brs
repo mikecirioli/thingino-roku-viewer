@@ -161,7 +161,22 @@ sub onAllInfoResponse(event as object)
 
     if m.cameras.count() > 0
         m.cameraList.setFocus(true)
-        startPreview(0)
+
+        ' Restore last camera selection
+        lastIdx = 0
+        sec = CreateObject("roRegistrySection", "settings")
+        lastName = sec.Read("lastCamName")
+        lastMode = sec.Read("lastCamMode")
+        if lastName <> invalid and lastName <> ""
+            for i = 0 to m.cameras.count() - 1
+                if m.cameras[i].name = lastName and m.cameras[i].mode = lastMode
+                    lastIdx = i
+                    exit for
+                end if
+            end for
+        end if
+        m.cameraList.jumpToItem = lastIdx
+        startPreview(lastIdx)
     end if
 end sub
 
@@ -183,6 +198,12 @@ end sub
 sub startPreview(idx as integer)
     m.currentCamera = idx
     cam = m.cameras[idx]
+
+    ' Remember last camera selection
+    sec = CreateObject("roRegistrySection", "settings")
+    sec.Write("lastCamName", cam.name)
+    sec.Write("lastCamMode", cam.mode)
+    sec.Flush()
     m.previewLabel.text = cam.name + " (" + cam.mode + ")"
 
     m.previewVideo.control = "stop"
