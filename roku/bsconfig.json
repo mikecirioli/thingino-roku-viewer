@@ -1,0 +1,16 @@
+{
+    "rootDir": ".",
+    "files": [
+        "source/main.brs",
+        "components/HttpTask.brs",
+        "components/MainScene.brs",
+        "components/ScreensaverScene.brs",
+        "components/SettingsScene.brs",
+        "components/SettingsView.brs",
+        "components/CameraListItem.brs"
+    ],
+    "watch": true,
+    "diagnosticFilters": [
+        { "src": "**/roku_modules/**/*.*", "codes": [1009, 1001, 1107] }
+    ]
+}
