@@ -758,9 +758,130 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 # ── HTTP handler ──────────────────────────────────────────
 
+def _onvif_ptz(cam_config, action, direction, speed=1.0):
+    """Send ONVIF PTZ command to a camera. Returns True on success."""
+    onvif = cam_config.get("onvif")
+    if not onvif:
+        return False
+
+    host = onvif.get("host", "")
+    port = onvif.get("port", 80)
+    user = onvif.get("username", "")
+    passwd = onvif.get("password", "")
+
+    if not host:
+        return False
+
+    # Map direction to ONVIF velocity vectors
+    velocity_map = {
+        "up":       (0, speed, 0),
+        "down":     (0, -speed, 0),
+        "left":     (-speed, 0, 0),
+        "right":    (speed, 0, 0),
+        "zoomIn":   (0, 0, speed),
+        "zoomOut":  (0, 0, -speed),
+    }
+    vx, vy, vz = velocity_map.get(direction, (0, 0, 0))
+
+    if action == "stop":
+        soap_body = '''<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">
+            <ProfileToken>000</ProfileToken>
+            <Velocity><PanTilt x="0" y="0" xmlns="http://www.onvif.org/ver10/schema"/>
+            <Zoom x="0" xmlns="http://www.onvif.org/ver10/schema"/></Velocity>
+        </ContinuousMove>'''
+    else:
+        soap_body = '''<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">
+            <ProfileToken>000</ProfileToken>
+            <Velocity><PanTilt x="{}" y="{}" xmlns="http://www.onvif.org/ver10/schema"/>
+            <Zoom x="{}" xmlns="http://www.onvif.org/ver10/schema"/></Velocity>
+        </ContinuousMove>'''.format(vx, vy, vz)
+
+    # Build SOAP envelope with WS-Security UsernameToken
+    import hashlib, base64
+    from datetime import datetime, timezone
+    nonce_raw = os.urandom(16)
+    nonce_b64 = base64.b64encode(nonce_raw).decode()
+    created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    digest_raw = hashlib.sha1(nonce_raw + created.encode() + passwd.encode()).digest()
+    digest_b64 = base64.b64encode(digest_raw).decode()
+
+    envelope = '''<?xml version="1.0" encoding="utf-8"?>
+    <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+      <s:Header>
+        <Security xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+          <UsernameToken>
+            <Username>{user}</Username>
+            <Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{digest}</Password>
+            <Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">{nonce}</Nonce>
+            <Created xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">{created}</Created>
+          </UsernameToken>
+        </Security>
+      </s:Header>
+      <s:Body>{body}</s:Body>
+    </s:Envelope>'''.format(user=user, digest=digest_b64, nonce=nonce_b64, created=created, body=soap_body)
+
+    try:
+        url = "http://{}:{}/onvif/ptz_service".format(host, port)
+        data = envelope.encode("utf-8")
+        req = Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/soap+xml; charset=utf-8")
+        resp = urlopen(req, timeout=5)
+        return resp.status == 200
+    except Exception as e:
+        print("ONVIF PTZ error: {}".format(e))
+        return False
+
+
 class PhotoHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if path.endswith("/ptz") and path.startswith("/camera/"):
+            self.handle_ptz(path)
+        else:
+            self.send_error(404)
+
+    def handle_ptz(self, path):
+        name = path[len("/camera/"):].rsplit("/ptz", 1)[0]
+        cam = _CAMERAS.get(name)
+        if not cam:
+            self.send_error(404, "Camera not found: {}".format(name))
+            return
+        if not cam.get("onvif"):
+            self.send_error(400, "Camera {} has no PTZ".format(name))
+            return
+
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        action = data.get("action", "move")
+        direction = data.get("direction", "stop")
+        speed = float(data.get("speed", 1.0))
+
+        ok = _onvif_ptz(cam, action, direction, speed)
+        result = json.dumps({"ok": ok}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(result)))
+        self.end_headers()
+        self.wfile.write(result)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
     def do_GET(self):
         parsed = urlparse(self.path)
