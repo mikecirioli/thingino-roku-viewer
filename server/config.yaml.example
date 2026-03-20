@@ -48,7 +48,7 @@ cameras:
   #     password: thingino
 
   # Stream-only camera (no snapshot URL)
-  # Server will use ffmpeg to extract frames for the screensaver
+  # Stream-only camera (HLS live video, no snapshot)
   # camera-3:
   #   stream: http://go2rtc:1984/api/stream.m3u8?src=camera-3_main
   #   stream_type: hls

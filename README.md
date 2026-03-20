@@ -56,7 +56,7 @@ cameras:
       username: thingino
       password: thingino
 
-  # Stream-only camera (ffmpeg extracts snapshots automatically)
+  # Stream-only camera (HLS live video, no snapshot)
   camera-3:
     stream: http://go2rtc:1984/api/stream.m3u8?src=camera-3_main
 ```
@@ -164,7 +164,7 @@ Open the screensaver settings from **Roku Settings > Screensaver > Thingino Roku
 |--------|-------------|-------------|
 | snapshot only | poster refresh (1fps) | poster refresh |
 | snapshot + stream | HLS live video | poster from snapshot |
-| stream only | HLS live video | poster via ffmpeg extraction |
+| stream only | HLS live video | HLS live video |
 
 **Auth types:**
 - `thingino` — session-based auth (POST to `/x/login.cgi`)

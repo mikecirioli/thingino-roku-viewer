@@ -5,7 +5,7 @@
 3 Bad Dogs — Photo & Camera Server
 
 Minimal HTTP server that serves random photos, camera snapshots
-(thingino or ffmpeg-from-stream), and optional HA/Frigate proxying.
+(thingino session auth or basic auth), and optional HA/Frigate proxying.
 
 Endpoints:
   /              HTML page — full-screen photo frame with auto-refresh and clock overlay
@@ -69,7 +69,6 @@ import mimetypes
 import json
 import time
 import threading
-import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
@@ -198,9 +197,8 @@ def _go2rtc_streams():
 class CameraStream:
     """Polls a camera for live JPEG frames.
 
-    Supports two snapshot sources:
-      1. Direct HTTP snapshot URL (thingino /x/ch0.jpg with session auth, or basic auth)
-      2. ffmpeg extraction from an HLS/RTSP stream (for stream-only cameras)
+    Supports snapshot sources:
+      - Direct HTTP snapshot URL (thingino /x/ch0.jpg with session auth, or basic auth)
     """
 
     def __init__(self, name, config):
@@ -330,26 +328,6 @@ class CameraStream:
             resp = urlopen(url, timeout=5)
             if resp.status == 200:
                 return resp.read()
-        except Exception:
-            pass
-        return None
-
-    def _fetch_ffmpeg(self, stream_url):
-        """Extract a single JPEG frame from a stream using ffmpeg."""
-        try:
-            proc = subprocess.run(
-                [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-i", stream_url,
-                    "-frames:v", "1",
-                    "-f", "image2", "-c:v", "mjpeg",
-                    "-q:v", "3",
-                    "pipe:1"
-                ],
-                capture_output=True, timeout=10
-            )
-            if proc.returncode == 0 and proc.stdout:
-                return proc.stdout
         except Exception:
             pass
         return None
