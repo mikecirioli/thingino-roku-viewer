@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<!-- https://creativecommons.org/licenses/by-nc-sa/4.0/ -->
+<component name="SettingsView" extends="Group">
+  <interface>
+    <field id="wasClosed" type="boolean" value="false" />
+  </interface>
+  <children>
+    <Rectangle width="1920" height="1080" color="#1a1a2e" />
+
+    <LayoutGroup translation="[100,60]" layoutDirection="horiz" itemSpacings="[100]">
+      <!-- Left Column -->
+      <LayoutGroup layoutDirection="vert" itemSpacings="[16]">
+        <Label id="title" text="3 Bad Dogs Settings" color="#FFFFFF" />
+
+        <!-- Server URL -->
+        <Label text="Server URL:" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <Group>
+          <Rectangle id="urlBg" width="700" height="44" color="#FFFFFF15" />
+          <Label id="urlLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+        </Group>
+        <Button id="editUrlBtn" text="Edit Server URL" focusable="true" />
+
+        <Rectangle width="700" height="1" color="#FFFFFF33" />
+
+        <!-- Username -->
+        <Label text="Username (optional):" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <Group>
+          <Rectangle id="userBg" width="700" height="44" color="#FFFFFF15" />
+          <Label id="userLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+        </Group>
+        <Button id="editUserBtn" text="Edit Username" focusable="true" />
+
+        <!-- Password -->
+        <Label text="Password (optional):" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <Group>
+          <Rectangle id="passBg" width="700" height="44" color="#FFFFFF15" />
+          <Label id="passLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+        </Group>
+        <Button id="editPassBtn" text="Edit Password" focusable="true" />
+        
+        <Label id="hint" text="OK = select / edit    Back = save and exit" color="#666666" translation="[0, 50]">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
+        </Label>
+      </LayoutGroup>
+
+      <!-- Right Column -->
+      <LayoutGroup layoutDirection="vert" itemSpacings="[16]" translation="[0, 60]">
+        <!-- Screensaver mode -->
+        <Label text="Screensaver Mode:" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <RadioButtonList id="modeList" focusable="true">
+          <ContentNode role="content">
+            <ContentNode title="Photo Frame - random photos with crossfade" />
+            <ContentNode title="Camera - cycle all cameras" />
+          </ContentNode>
+        </RadioButtonList>
+
+        <Label id="loading" text="Loading cameras..." color="#666666" visible="false" />
+
+        <Rectangle width="700" height="1" color="#FFFFFF33" />
+
+        <!-- Timing -->
+        <Label text="Photo Interval:" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <RadioButtonList id="photoIntervalList" focusable="true">
+          <ContentNode role="content">
+            <ContentNode title="15 seconds" />
+            <ContentNode title="30 seconds" />
+            <ContentNode title="60 seconds" />
+            <ContentNode title="120 seconds" />
+          </ContentNode>
+        </RadioButtonList>
+
+        <Label text="Camera Cycle Interval:" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <RadioButtonList id="cycleIntervalList" focusable="true">
+          <ContentNode role="content">
+            <ContentNode title="3 seconds" />
+            <ContentNode title="5 seconds" />
+            <ContentNode title="10 seconds" />
+            <ContentNode title="15 seconds" />
+          </ContentNode>
+        </RadioButtonList>
+      </LayoutGroup>
+    </LayoutGroup>
+
+    <!-- Keyboard dialog (created dynamically) -->
+  </children>
+
+  <script type="text/brightscript" uri="SettingsView.brs" />
+</component>

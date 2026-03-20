@@ -13,24 +13,53 @@ Endpoints:
   /random?w=1280&h=800  Resize on the fly (requires Pillow)
   /camera/list   JSON array of available camera names
   /camera/<name> JPEG snapshot (optional ?w=&h= resize)
-  /camera/<name>/info  JSON: {name, snapshot, stream, stream_type, ptz}
-  /camera/<name>/ptz   POST: PTZ control (ONVIF) — {action, direction, speed}
+  /camera/<name>/info  JSON: {name, snapshot, stream, stream_type}
+  /frigate/*     Proxy to Frigate API (requires FRIGATE_URL env var, adds CORS headers)
   /ha/weather    Plain text: current weather summary
   /ha/forecast   Plain text: 3-day forecast
   /ha/event      Plain text: next calendar event
   /ha/thermostat Plain text: thermostat status
   /health        Health check
 
-Configuration:
-  All settings are read from config.yaml (default: /config/config.yaml).
-  Environment variables override config.yaml values for backward compatibility.
+Camera configuration (in order of precedence):
+  1. cameras.yaml file (CAMERAS_FILE env var, default: /config/cameras.yaml)
+  2. CAMERAS env var (JSON object, backward compatible)
 
-  See config.yaml.example for all available options.
+cameras.yaml format:
+  cameras:
+    front-door:
+      snapshot: http://192.168.1.55/x/ch0.jpg
+      auth:
+        type: a_secure_password          # "a_secure_password" or "basic"
+        username: admin
+        password: front-door
+    camera-3:
+      stream: http://192.168.1.207:1984/api/stream.m3u8?src=camera-3_main
+      stream_type: hls          # "hls" (default if stream present)
+    living-room:
+      snapshot: http://192.168.1.106/x/ch0.jpg
+      stream: http://go2rtc:1984/api/stream.m3u8?src=living-room_main
+      auth:
+        type: a_secure_password
+        username: admin
+        password: password456
+
+Environment variables:
+  PHOTO_DIR      Directory containing images (default: /media)
+  PORT           Listen port (default: 8099)
+  REFRESH        Seconds between photo changes on the HTML page (default: 30)
+  TITLE          Page title / overlay text (default: empty)
+  CAMERAS_FILE   Path to cameras.yaml (default: /config/cameras.yaml)
+  CAMERAS        JSON object of a_secure_password cameras (legacy, backward compat)
+  CAMERA_IDLE    Seconds with no requests before closing a camera stream (default: 30)
+  FRIGATE_URL    Frigate base URL for proxy (e.g. http://frigate:5000)
+  GO2RTC_URL     go2rtc base URL for camera list discovery (e.g. http://go2rtc:1984)
+  HA_URL         Home Assistant URL (e.g. http://homeassistant:8123)
+  HA_TOKEN       Long-lived access token for HA REST API
 
 Usage:
-  docker run -v /path/to/config.yaml:/config/config.yaml:ro \\
-             -v /path/to/photos:/media:ro \\
-             -p 8099:8099 3-bad-dogs-server
+  python3 server.py
+  docker run -v /path/to/photos:/media -p 8099:8099 3-bad-dogs-server
 """
 
 import os
@@ -52,16 +81,16 @@ try:
 except ImportError:
     from urllib2 import urlopen, Request, URLError
 
-CONFIG_FILE = os.environ.get("CONFIG_FILE", "/config/config.yaml")
-
-# Defaults — overridden by config.yaml, then by env vars
-PHOTO_DIR = "/media"
-PORT = 8099
-REFRESH = 30
-TITLE = ""
-CAMERA_IDLE = 30
-HA_URL = ""
-HA_TOKEN = ""
+PHOTO_DIR = os.environ.get("PHOTO_DIR", "/media")
+PORT = int(os.environ.get("PORT", "8099"))
+REFRESH = int(os.environ.get("REFRESH", "30"))
+TITLE = os.environ.get("TITLE", "")
+CAMERAS_FILE = os.environ.get("CAMERAS_FILE", "/config/cameras.yaml")
+FRIGATE_URL = os.environ.get("FRIGATE_URL", "")
+GO2RTC_URL = os.environ.get("GO2RTC_URL", "").rstrip("/")
+CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", "30"))
+HA_URL = os.environ.get("HA_URL", "").rstrip("/")
+HA_TOKEN = os.environ.get("HA_TOKEN", "")
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
 # ── Photo cache ──────────────────────────────────────────
@@ -109,49 +138,31 @@ def resize_image(path, max_w, max_h):
 _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, password}}
 
 
-def _load_config():
-    """Load config from YAML file, with env var overrides."""
-    global PHOTO_DIR, PORT, REFRESH, TITLE
-    global CAMERA_IDLE, HA_URL, HA_TOKEN, _CAMERAS, _cameras_lower
+def _load_cameras():
+    """Load camera config from YAML file or CAMERAS env var."""
+    global _CAMERAS
 
-    cfg = {}
-
-    # Also try legacy cameras.yaml path for backward compat
-    for path in [CONFIG_FILE, "/config/cameras.yaml"]:
-        if os.path.isfile(path):
-            try:
-                import yaml
-                with open(path) as f:
-                    cfg = yaml.safe_load(f) or {}
-                print(f"  config: loaded from {path}")
-                break
-            except ImportError:
-                print("WARNING: PyYAML not installed, cannot read config")
-            except Exception as e:
-                print(f"WARNING: failed to parse {path}: {e}")
-            break
-
-    # Apply config.yaml values (env vars override)
-    PHOTO_DIR = os.environ.get("PHOTO_DIR", cfg.get("photo_dir", PHOTO_DIR))
-    PORT = int(os.environ.get("PORT", cfg.get("port", PORT)))
-    REFRESH = int(os.environ.get("REFRESH", cfg.get("refresh", REFRESH)))
-    TITLE = os.environ.get("TITLE", cfg.get("title", TITLE))
-    CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", cfg.get("camera_idle", CAMERA_IDLE)))
-    HA_URL = os.environ.get("HA_URL", cfg.get("ha_url", HA_URL)).rstrip("/")
-    HA_TOKEN = os.environ.get("HA_TOKEN", cfg.get("ha_token", HA_TOKEN))
-
-    # Load cameras from config
-    if cfg.get("cameras"):
-        _CAMERAS = cfg["cameras"]
-        _cameras_lower = {k.lower(): k for k in _CAMERAS}
-        print(f"  cameras: {len(_CAMERAS)} configured")
-        return
+    # Try YAML file first
+    if os.path.isfile(CAMERAS_FILE):
+        try:
+            import yaml
+            with open(CAMERAS_FILE) as f:
+                cfg = yaml.safe_load(f)
+            if cfg and "cameras" in cfg:
+                _CAMERAS = cfg["cameras"]
+                print(f"  cameras: loaded {len(_CAMERAS)} from {CAMERAS_FILE}")
+                return
+        except ImportError:
+            print("WARNING: PyYAML not installed, cannot read cameras.yaml")
+        except Exception as e:
+            print(f"WARNING: failed to parse {CAMERAS_FILE}: {e}")
 
     # Fall back to CAMERAS env var (legacy JSON format)
     cameras_env = os.environ.get("CAMERAS", "")
     if cameras_env:
         try:
             legacy = json.loads(cameras_env)
+            # Convert legacy format: {name: {ip, user, pass}} -> unified format
             for name, cam in legacy.items():
                 _CAMERAS[name] = {
                     "snapshot": "http://{}/x/ch0.jpg".format(cam["ip"]),
@@ -164,8 +175,22 @@ def _load_config():
             print(f"  cameras: loaded {len(_CAMERAS)} from CAMERAS env var (legacy)")
         except json.JSONDecodeError:
             print("WARNING: CAMERAS env var is not valid JSON, ignoring")
-    _cameras_lower = {k.lower(): k for k in _CAMERAS}
 
+
+def _go2rtc_streams():
+    """Fetch stream names from go2rtc, return list of base camera names."""
+    if not GO2RTC_URL:
+        return []
+    try:
+        resp = urlopen(GO2RTC_URL + "/api/streams", timeout=5)
+        data = json.loads(resp.read())
+        names = set()
+        for key in data:
+            base = key.rsplit("_main", 1)[0].rsplit("_sub", 1)[0]
+            names.add(base)
+        return sorted(names)
+    except Exception:
+        return []
 
 
 # ── Camera streams ───────────────────────────────────────
@@ -344,24 +369,10 @@ class CameraStream:
 _streams = {}
 _streams_lock = threading.Lock()
 
-# Case-insensitive camera name lookup
-_cameras_lower = {}  # populated by _load_config()
-
-
-def _resolve_camera(name):
-    """Resolve camera name (case-insensitive). Returns (canonical_name, config) or (None, None)."""
-    cam = _CAMERAS.get(name)
-    if cam:
-        return name, cam
-    canonical = _cameras_lower.get(name.lower())
-    if canonical:
-        return canonical, _CAMERAS[canonical]
-    return None, None
-
 
 def camera_snapshot(name, max_w=None, max_h=None):
     """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
-    name, cam = _resolve_camera(name)
+    cam = _CAMERAS.get(name)
     if not cam:
         return None, None
     with _streams_lock:
@@ -380,14 +391,17 @@ def camera_snapshot(name, max_w=None, max_h=None):
 
 def camera_info(name):
     """Return camera info dict for /camera/<name>/info endpoint."""
-    name, cam = _resolve_camera(name)
+    cam = _CAMERAS.get(name)
     if not cam:
         return None
+    
+    stream_url = cam.get("stream", "")
+
     return {
         "name": name,
-        "snapshot": bool(cam.get("snapshot")),
-        "stream": cam.get("stream", ""),
-        "stream_type": cam.get("stream_type", "hls") if cam.get("stream") else "",
+        "snapshot": cam.get("snapshot", ""),
+        "stream": stream_url,
+        "stream_type": cam.get("stream_type", "hls") if stream_url else "",
         "ptz": bool(cam.get("onvif")),
     }
 
@@ -405,184 +419,6 @@ def _resize_jpeg(data, max_w, max_h):
         return buf.getvalue(), "image/jpeg"
     except ImportError:
         return data, "image/jpeg"
-
-
-# ── ONVIF PTZ ─────────────────────────────────────────────
-# Raw SOAP implementation — no external dependencies.
-# Supports ContinuousMove (pan/tilt/zoom) and Stop.
-# WSSE UsernameToken (Digest) authentication.
-
-import hashlib
-import base64
-from datetime import datetime, timezone
-
-_PTZ_NS = "http://www.onvif.org/ver20/ptz/wsdl"
-_MEDIA_NS = "http://www.onvif.org/ver10/media/wsdl"
-_SCHEMA_NS = "http://www.onvif.org/ver10/schema"
-_SOAP_NS = "http://www.w3.org/2003/05/soap-envelope"
-_WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
-_WSU_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
-_PASSWORD_TYPE = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest"
-
-
-def _wsse_header(username, password):
-    """Build WSSE UsernameToken (Digest) SOAP header."""
-    nonce_raw = os.urandom(16)
-    nonce_b64 = base64.b64encode(nonce_raw).decode()
-    created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    digest_raw = hashlib.sha1(nonce_raw + created.encode() + password.encode()).digest()
-    digest_b64 = base64.b64encode(digest_raw).decode()
-    return """<wsse:Security xmlns:wsse="{wsse}" xmlns:wsu="{wsu}">
-      <wsse:UsernameToken>
-        <wsse:Username>{user}</wsse:Username>
-        <wsse:Password Type="{ptype}">{digest}</wsse:Password>
-        <wsse:Nonce>{nonce}</wsse:Nonce>
-        <wsu:Created>{created}</wsu:Created>
-      </wsse:UsernameToken>
-    </wsse:Security>""".format(
-        wsse=_WSSE_NS, wsu=_WSU_NS, user=username,
-        ptype=_PASSWORD_TYPE, digest=digest_b64,
-        nonce=nonce_b64, created=created
-    )
-
-
-def _soap_envelope(header_xml, body_xml):
-    """Wrap header + body in a SOAP envelope."""
-    return """<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="{soap}">
-  <s:Header>{header}</s:Header>
-  <s:Body>{body}</s:Body>
-</s:Envelope>""".format(soap=_SOAP_NS, header=header_xml, body=body_xml)
-
-
-class OnvifPtz:
-    """ONVIF PTZ controller using raw SOAP calls."""
-
-    def __init__(self, host, port, username, password):
-        self._host = host
-        self._port = port
-        self._user = username
-        self._pass = password
-        self._profile_token = None
-
-    def _url(self, service):
-        return "http://{}:{}/onvif/{}".format(self._host, self._port, service)
-
-    def _call(self, service, body_xml):
-        """Send a SOAP request, return response body text."""
-        header = _wsse_header(self._user, self._pass)
-        envelope = _soap_envelope(header, body_xml)
-        data = envelope.encode("utf-8")
-        req = Request(self._url(service), data=data, method="POST")
-        req.add_header("Content-Type", "application/soap+xml; charset=utf-8")
-        try:
-            resp = urlopen(req, timeout=5)
-            return resp.read().decode("utf-8")
-        except Exception as e:
-            return None
-
-    def _get_profile_token(self):
-        """Fetch the first media profile token."""
-        if self._profile_token:
-            return self._profile_token
-        body = '<trt:GetProfiles xmlns:trt="{}"/>'.format(_MEDIA_NS)
-        resp = self._call("media_service", body)
-        if not resp:
-            return None
-        # Simple XML parse — find first token attribute
-        import re
-        m = re.search(r'<[^>]*Profiles[^>]*\btoken="([^"]+)"', resp)
-        if m:
-            self._profile_token = m.group(1)
-            return self._profile_token
-        return None
-
-    def continuous_move(self, pan=0.0, tilt=0.0, zoom=0.0):
-        """Start continuous pan/tilt/zoom movement."""
-        token = self._get_profile_token()
-        if not token:
-            return False
-        body = """<tptz:ContinuousMove xmlns:tptz="{ptz}" xmlns:tt="{schema}">
-          <tptz:ProfileToken>{token}</tptz:ProfileToken>
-          <tptz:Velocity>
-            <tt:PanTilt x="{pan}" y="{tilt}"/>
-            <tt:Zoom x="{zoom}"/>
-          </tptz:Velocity>
-        </tptz:ContinuousMove>""".format(
-            ptz=_PTZ_NS, schema=_SCHEMA_NS, token=token,
-            pan=pan, tilt=tilt, zoom=zoom
-        )
-        return self._call("ptz_service", body) is not None
-
-    def stop(self):
-        """Stop all PTZ movement."""
-        token = self._get_profile_token()
-        if not token:
-            return False
-        body = """<tptz:Stop xmlns:tptz="{ptz}">
-          <tptz:ProfileToken>{token}</tptz:ProfileToken>
-          <tptz:PanTilt>true</tptz:PanTilt>
-          <tptz:Zoom>true</tptz:Zoom>
-        </tptz:Stop>""".format(ptz=_PTZ_NS, token=token)
-        return self._call("ptz_service", body) is not None
-
-    def move(self, direction, speed=0.5):
-        """Convenience: start moving in a named direction."""
-        dirs = {
-            "left":     (-speed, 0, 0),
-            "right":    (speed, 0, 0),
-            "up":       (0, speed, 0),
-            "down":     (0, -speed, 0),
-            "zoomIn":   (0, 0, speed),
-            "zoomOut":  (0, 0, -speed),
-        }
-        vals = dirs.get(direction)
-        if not vals:
-            return False
-        return self.continuous_move(*vals)
-
-
-_ptz_controllers = {}
-_ptz_lock = threading.Lock()
-
-
-def get_ptz(name):
-    """Get or create an OnvifPtz controller for a camera. Returns None if no ONVIF config."""
-    name, cam = _resolve_camera(name)
-    if not cam:
-        return None
-    onvif = cam.get("onvif")
-    if not onvif:
-        return None
-    with _ptz_lock:
-        ctrl = _ptz_controllers.get(name)
-        if ctrl is None:
-            ctrl = OnvifPtz(
-                onvif.get("host", ""),
-                onvif.get("port", 80),
-                onvif.get("username", "admin"),
-                onvif.get("password", ""),
-            )
-            _ptz_controllers[name] = ctrl
-        return ctrl
-
-
-def handle_ptz(name, body):
-    """Handle a PTZ command. body is parsed JSON: {action, direction, speed}."""
-    ctrl = get_ptz(name)
-    if not ctrl:
-        return False, "No ONVIF config for camera: {}".format(name)
-    action = body.get("action", "")
-    if action == "move":
-        direction = body.get("direction", "")
-        speed = float(body.get("speed", 0.5))
-        ok = ctrl.move(direction, speed)
-        return ok, "" if ok else "Move failed"
-    elif action == "stop":
-        ok = ctrl.stop()
-        return ok, "" if ok else "Stop failed"
-    else:
-        return False, "Unknown action: {}".format(action)
 
 
 # ── HA data cache ─────────────────────────────────────────
@@ -926,37 +762,26 @@ class PhotoHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def do_OPTIONS(self):
-        """Handle CORS preflight for POST endpoints."""
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/")
-
-        if path.endswith("/ptz") and path.startswith("/camera/"):
-            self.handle_ptz_request(path)
-        else:
-            self.send_error(404)
-
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
         if path == "" or path == "/index.html":
             self.serve_html()
+        elif path == "/web":
+            self.serve_web_ui()
         elif path == "/random":
             self.serve_random(parsed)
         elif path == "/camera/list":
             self.serve_camera_list()
+        elif path == "/camera/all_info":
+            self.serve_all_camera_info()
         elif path.endswith("/info") and path.startswith("/camera/"):
             self.serve_camera_info(path)
         elif path.startswith("/camera/"):
             self.serve_camera(path, parsed)
+        elif path.startswith("/frigate") and FRIGATE_URL:
+            self.proxy_frigate(parsed)
         elif path.startswith("/ha/"):
             self.serve_ha(path)
         elif path == "/health":
@@ -992,7 +817,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def serve_camera_list(self):
-        names = sorted(_CAMERAS.keys())
+        names = sorted(set(list(_CAMERAS.keys()) + _go2rtc_streams()))
         data = json.dumps(names).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -1018,32 +843,6 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def handle_ptz_request(self, path):
-        """Handle POST /camera/<name>/ptz — PTZ control."""
-        name = path[len("/camera/"):].rsplit("/ptz", 1)[0]
-        content_len = int(self.headers.get("Content-Length", 0))
-        if content_len > 0:
-            raw = self.rfile.read(content_len)
-            try:
-                body = json.loads(raw)
-            except json.JSONDecodeError:
-                self.send_error(400, "Invalid JSON")
-                return
-        else:
-            body = {}
-        ok, err = handle_ptz(name, body)
-        if ok:
-            resp = json.dumps({"ok": True}).encode()
-            self.send_response(200)
-        else:
-            resp = json.dumps({"ok": False, "error": err}).encode()
-            self.send_response(400 if "Unknown" in err else 502)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", str(len(resp)))
-        self.end_headers()
-        self.wfile.write(resp)
-
     def serve_camera(self, path, parsed):
         name = path[len("/camera/"):]
         if not name:
@@ -1063,6 +862,42 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def proxy_frigate(self, parsed):
+        downstream = parsed.path[len("/frigate"):]
+        if not downstream:
+            downstream = "/"
+        url = FRIGATE_URL + downstream
+        if parsed.query:
+            url += "?" + parsed.query
+        try:
+            req = Request(url)
+            resp = urlopen(req, timeout=10)
+            data = resp.read()
+            ct = resp.headers.get("Content-Type", "application/octet-stream")
+            self.send_response(resp.status)
+            self.send_header("Content-Type", ct)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_error(502, "Frigate proxy error: {}".format(e))
+
+    def serve_web_ui(self):
+        try:
+            with open('/web/web_ui.html', 'r') as f:
+                html = f.read()
+            data = html.encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except FileNotFoundError:
+            self.send_error(404, 'Web UI not found')
 
     def serve_html(self):
         title_div = '<div class="title">{}</div>'.format(TITLE) if TITLE else ""
@@ -1107,8 +942,24 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.send_error(500, "Failed to read file")
 
 
+    def serve_all_camera_info(self):
+        """Serve a list of all cameras with their full info."""
+        all_info = []
+        for name in _CAMERAS:
+            info = camera_info(name)
+            if info:
+                all_info.append(info)
+        
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(all_info).encode())
+
+
 if __name__ == "__main__":
-    _load_config()
+    _load_cameras()
     photos = get_photos()
     print(f"3-bad-dogs server: {len(photos)} photos in {PHOTO_DIR}, port {PORT}, refresh {REFRESH}s")
     if not photos:
@@ -1120,6 +971,10 @@ if __name__ == "__main__":
             has_stream = "stream" if cam.get("stream") else ""
             sources = " + ".join(filter(None, [has_snap, has_stream]))
             print(f"    {name}: {sources}")
+    if GO2RTC_URL:
+        cams = _go2rtc_streams()
+        print(f"  go2rtc: {len(cams)} cameras via {GO2RTC_URL}")
+
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         daemon_threads = True
 

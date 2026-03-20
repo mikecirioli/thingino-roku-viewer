@@ -1,5 +1,4 @@
 ' Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
-' https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 sub init()
     m.DEFAULT_SERVER_URL = ""
@@ -8,6 +7,10 @@ sub init()
 
     m.urlLabel = m.top.findNode("urlLabel")
     m.editUrlBtn = m.top.findNode("editUrlBtn")
+    m.userLabel = m.top.findNode("userLabel")
+    m.editUserBtn = m.top.findNode("editUserBtn")
+    m.passLabel = m.top.findNode("passLabel")
+    m.editPassBtn = m.top.findNode("editPassBtn")
     m.modeList = m.top.findNode("modeList")
     m.loading = m.top.findNode("loading")
     m.photoIntervalList = m.top.findNode("photoIntervalList")
@@ -28,15 +31,17 @@ sub init()
 
     m.USERNAME = sec.Read("username")
     if m.USERNAME = invalid or m.USERNAME = "" then m.USERNAME = m.DEFAULT_USERNAME
+    m.userLabel.text = m.USERNAME
+
     m.PASSWORD = sec.Read("password")
     if m.PASSWORD = invalid or m.PASSWORD = "" then m.PASSWORD = m.DEFAULT_PASSWORD
+    if m.PASSWORD <> "" then m.passLabel.text = String(m.PASSWORD.len(), "*")
 
     m.savedMode = sec.Read("mode")
     if m.savedMode <> "camera" and m.savedMode <> "video" then m.savedMode = "photo"
     m.savedCamera = sec.Read("camera")
     if m.savedCamera = "" then m.savedCamera = "cycle"
 
-    ' Restore photo interval
     savedPhotoInt = sec.Read("photoInterval")
     if savedPhotoInt = "" then savedPhotoInt = "30"
     photoIdx = 1
@@ -45,7 +50,6 @@ sub init()
     end for
     m.photoIntervalList.checkedItem = photoIdx
 
-    ' Restore cycle interval
     savedCycleInt = sec.Read("cycleInterval")
     if savedCycleInt = "" then savedCycleInt = "5"
     cycleIdx = 1
@@ -54,7 +58,6 @@ sub init()
     end for
     m.cycleIntervalList.checkedItem = cycleIdx
 
-    ' Mode options
     m.options = []
     m.options.push({ mode: "photo", camera: "" })
     m.options.push({ mode: "camera", camera: "cycle" })
@@ -67,52 +70,119 @@ sub init()
         m.modeList.checkedItem = 1
     end if
 
-    m.editUrlBtn.setFocus(true)
     m.editUrlBtn.observeField("buttonSelected", "onEditUrl")
+    m.editUserBtn.observeField("buttonSelected", "onEditUsername")
+    m.editPassBtn.observeField("buttonSelected", "onEditPassword")
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
 
-    ' Fetch camera list
+    ' Focus navigation grid: [row][col] where col 0=left, col 1=right
+    m.focusGrid = [
+        [m.editUrlBtn, m.modeList],
+        [m.editUserBtn, m.photoIntervalList],
+        [m.editPassBtn, m.cycleIntervalList]
+    ]
+    m.focusRow = 0
+    m.focusCol = 0
+
     m.loading.visible = true
     fetchCameraList()
+
+    ' Set initial focus on first button
+    m.editUrlBtn.setFocus(true)
 end sub
 
-' -- Server URL editing --
-
+' -- Dialogs --
 sub onEditUrl()
     dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
     dialog.title = "Enter Server URL"
     dialog.text = m.SERVER_URL
     dialog.buttons = ["OK", "Cancel"]
     dialog.observeField("buttonSelected", "onUrlDialogButton")
-    m.top.dialog = dialog
+    m.top.getScene().dialog = dialog
 end sub
 
 sub onUrlDialogButton(event as object)
-    idx = event.getData()
-    dialog = m.top.dialog
-    if idx = 0
-        ' OK pressed — save the URL
-        newUrl = dialog.text
+    if event.getData() = 0
+        newUrl = event.getNode().text
         if newUrl <> "" and newUrl <> m.SERVER_URL
             m.SERVER_URL = newUrl
             m.urlLabel.text = newUrl
             sec = CreateObject("roRegistrySection", "settings")
             sec.Write("serverUrl", newUrl)
             sec.Flush()
-            ' Re-fetch camera list with new URL
-            m.loading.visible = true
-            m.loading.text = "Loading cameras..."
-            clearCameraOptions()
-            fetchCameraList()
+            refreshCameraList()
         end if
     end if
-    m.top.dialog = invalid
+    m.top.getScene().dialog = invalid
+    m.focusGrid[m.focusRow][m.focusCol].setFocus(true)
 end sub
 
+sub onEditUsername()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Enter Username"
+    dialog.text = m.USERNAME
+    dialog.buttons = ["OK", "Cancel"]
+    dialog.observeField("buttonSelected", "onUsernameDialogButton")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onUsernameDialogButton(event as object)
+    if event.getData() = 0
+        newUser = event.getNode().text
+        if newUser <> m.USERNAME
+            m.USERNAME = newUser
+            m.userLabel.text = newUser
+            sec = CreateObject("roRegistrySection", "settings")
+            sec.Write("username", newUser)
+            sec.Flush()
+            refreshCameraList()
+        end if
+    end if
+    m.top.getScene().dialog = invalid
+    m.focusGrid[m.focusRow][m.focusCol].setFocus(true)
+end sub
+
+sub onEditPassword()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Enter Password"
+    dialog.text = m.PASSWORD
+    dialog.isPassword = true
+    dialog.buttons = ["OK", "Cancel"]
+    dialog.observeField("buttonSelected", "onPasswordDialogButton")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onPasswordDialogButton(event as object)
+    if event.getData() = 0
+        newPass = event.getNode().text
+        if newPass <> m.PASSWORD
+            m.PASSWORD = newPass
+            if newPass = ""
+                m.passLabel.text = ""
+            else
+                m.passLabel.text = String(newPass.len(), "*")
+            end if
+            sec = CreateObject("roRegistrySection", "settings")
+            sec.Write("password", newPass)
+            sec.Flush()
+            refreshCameraList()
+        end if
+    end if
+    m.top.getScene().dialog = invalid
+    m.focusGrid[m.focusRow][m.focusCol].setFocus(true)
+end sub
+
+sub refreshCameraList()
+    m.loading.visible = true
+    m.loading.text = "Loading cameras..."
+    clearCameraOptions()
+    fetchCameraList()
+end sub
+
+' -- Camera list handling (for settings options) --
 sub clearCameraOptions()
-    ' Reset mode list to just the two base options
     content = m.modeList.content
     while content.getChildCount() > 2
         content.removeChildIndex(content.getChildCount() - 1)
@@ -124,30 +194,34 @@ sub clearCameraOptions()
     m.cameraInfoMap = {}
 end sub
 
-' -- Camera list --
-
 sub fetchCameraList()
     ts = CreateObject("roDateTime")
     url = m.SERVER_URL + "/camera/list?t=" + ts.asSeconds().toStr()
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraListResponse")
+    task.observeField("error", "onCameraListError")
     task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
     task.control = "run"
-    m.cameraListTask = task
+end sub
+
+sub onCameraListError(event as object)
+    errMsg = event.getData()
+    if errMsg <> invalid and errMsg <> ""
+        m.loading.text = "Error: " + errMsg
+    else
+        m.loading.text = "Could not reach server"
+    end if
 end sub
 
 sub onCameraListResponse(event as object)
     text = event.getData()
-    if text = invalid or text = "" then
-        m.loading.visible = false
+    if text = invalid or text = ""
         m.loading.text = "Could not reach server"
-        m.loading.visible = true
         return
     end if
-
     json = ParseJSON(text)
-    if json = invalid or type(json) <> "roArray" then
-        m.loading.visible = false
+    if json = invalid or type(json) <> "roArray"
+        m.loading.text = "Auth Failed or Bad Response"
         return
     end if
 
@@ -156,34 +230,20 @@ sub onCameraListResponse(event as object)
         m.filteredCamNames.push(name)
     end for
 
-    ' Add snapshot camera options
     content = m.modeList.content
     savedIdx = -1
-
     for each name in m.filteredCamNames
         item = content.createChild("ContentNode")
         item.title = "Camera - " + name
-
         opt = { mode: "camera", camera: name }
         m.options.push(opt)
-
-        if m.savedMode = "camera" and m.savedCamera = name
-            savedIdx = m.options.count() - 1
-        end if
+        if m.savedMode = "camera" and m.savedCamera = name then savedIdx = m.options.count() - 1
     end for
+    if savedIdx >= 0 then m.modeList.checkedItem = savedIdx
 
-    if savedIdx >= 0
-        m.modeList.checkedItem = savedIdx
-    end if
-
-    ' Fetch info for each camera to discover HLS streams
     m.loading.text = "Checking streams..."
     m.pendingInfoCount = m.filteredCamNames.count()
-    if m.pendingInfoCount = 0 then
-        m.loading.visible = false
-        return
-    end if
-
+    if m.pendingInfoCount = 0 then m.loading.visible = false
     for each name in m.filteredCamNames
         fetchCameraInfo(name)
     end for
@@ -194,24 +254,28 @@ sub fetchCameraInfo(name as string)
     url = m.SERVER_URL + "/camera/" + name + "/info?t=" + ts.asSeconds().toStr()
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraInfoResponse")
+    task.observeField("error", "onCameraInfoError")
     task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
     task.control = "run"
 end sub
 
-sub onCameraInfoResponse(event as object)
-    text = event.getData()
+sub onCameraInfoError(event as object)
     m.pendingInfoCount = m.pendingInfoCount - 1
+    if m.pendingInfoCount <= 0
+        m.loading.visible = false
+        addVideoOptions()
+    end if
+end sub
 
+sub onCameraInfoResponse(event as object)
+    m.pendingInfoCount = m.pendingInfoCount - 1
+    text = event.getData()
     if text <> invalid and text <> ""
         info = ParseJSON(text)
         if info <> invalid and info.stream <> invalid and info.stream <> ""
-            m.cameraInfoMap[info.name] = {
-                stream: info.stream,
-                streamType: info.stream_type
-            }
+            m.cameraInfoMap[info.name] = { stream: info.stream, streamType: info.stream_type }
         end if
     end if
-
     if m.pendingInfoCount <= 0
         m.loading.visible = false
         addVideoOptions()
@@ -221,33 +285,23 @@ end sub
 sub addVideoOptions()
     content = m.modeList.content
     savedIdx = -1
-
     for each name in m.filteredCamNames
         camInfo = m.cameraInfoMap[name]
         if camInfo <> invalid
             item = content.createChild("ContentNode")
             item.title = "Live Video - " + name
-
             opt = { mode: "video", camera: name }
             m.options.push(opt)
-
-            if m.savedMode = "video" and m.savedCamera = name
-                savedIdx = m.options.count() - 1
-            end if
+            if m.savedMode = "video" and m.savedCamera = name then savedIdx = m.options.count() - 1
         end if
     end for
-
-    if savedIdx >= 0
-        m.modeList.checkedItem = savedIdx
-    end if
+    if savedIdx >= 0 then m.modeList.checkedItem = savedIdx
 end sub
 
 ' -- Setting changes --
-
 sub onModeChanged()
     idx = m.modeList.checkedItem
     if idx < 0 or idx >= m.options.count() then return
-
     opt = m.options[idx]
     sec = CreateObject("roRegistrySection", "settings")
     sec.Write("mode", opt.mode)
@@ -271,6 +325,38 @@ sub onCycleIntervalChanged()
     sec.Flush()
 end sub
 
+' -- Key handling --
 function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = "back"
+        m.top.visible = false
+        m.top.wasClosed = true
+        return true
+    end if
+
+    rows = m.focusGrid.count()
+    newRow = m.focusRow
+    newCol = m.focusCol
+
+    if key = "down"
+        newRow = (m.focusRow + 1) mod rows
+    else if key = "up"
+        newRow = (m.focusRow - 1 + rows) mod rows
+    else if key = "right" and m.focusCol = 0
+        newCol = 1
+    else if key = "left" and m.focusCol = 1
+        newCol = 0
+    else
+        return false
+    end if
+
+    if newRow <> m.focusRow or newCol <> m.focusCol
+        m.focusRow = newRow
+        m.focusCol = newCol
+        m.focusGrid[newRow][newCol].setFocus(true)
+        return true
+    end if
+
     return false
 end function
