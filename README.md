@@ -203,3 +203,7 @@ ha_token: YOUR_LONG_LIVED_ACCESS_TOKEN
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — Creative Commons Attribution-NonCommercial-ShareAlike 4.0
 
 Copyright (c) 2026 Mike Cirioli
+
+## Deployment
+
+For instructions on how to deploy the server and test new features, please see the [Deployment and Testing Guide](DEPLOYMENT_AND_TESTING.md).
