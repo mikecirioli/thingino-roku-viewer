@@ -69,6 +69,8 @@ import mimetypes
 import json
 import time
 import threading
+import subprocess
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
@@ -90,7 +92,103 @@ GO2RTC_URL = os.environ.get("GO2RTC_URL", "").rstrip("/")
 CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", "30"))
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
+TIMELAPSE_STORAGE_PATH = os.environ.get("TIMELAPSE_STORAGE_PATH", "/data/timelapse")
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+
+# ── Timelapse Capturer ──────────────────────────────────
+
+class TimelapseCapturer:
+    """Manages background snapshot capture for multiple cameras."""
+
+    def __init__(self, cameras_config):
+        self._cameras = cameras_config
+        self._timers = {}
+        self._thread = None
+
+    def start(self):
+        """Start the background capture thread."""
+        if self._thread is not None:
+            return
+        print("  timelapse: starting capture service")
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        """Main loop to schedule and trigger camera snapshots."""
+        for name, config in self._cameras.items():
+            tl_config = config.get("timelapse")
+            if tl_config and tl_config.get("enabled"):
+                self._schedule_next_capture(name, tl_config)
+        
+        # Keep thread alive to manage timers
+        while True:
+            time.sleep(1)
+
+    def _schedule_next_capture(self, name, tl_config):
+        """Schedules the next snapshot for a given camera."""
+        interval = tl_config.get("interval", 60)
+        timer = threading.Timer(interval, self._capture_and_reschedule, args=[name, tl_config])
+        self._timers[name] = timer
+        timer.start()
+
+    def _capture_and_reschedule(self, name, tl_config):
+        """The function executed by the timer."""
+        self._capture_frame(name, tl_config)
+        self._schedule_next_capture(name, tl_config)
+
+    def _capture_frame(self, name, tl_config):
+        """Fetches and saves a single frame for a camera."""
+        source = tl_config.get("source", "snapshot")
+        cam_config = self._cameras.get(name, {})
+        
+        print(f"  timelapse: capturing frame for '{name}' (source: {source})")
+
+        raw_frame = None
+        if source == "stream":
+            stream_url = cam_config.get("stream")
+            if stream_url:
+                raw_frame = self._fetch_ffmpeg(stream_url)
+        else: # Default to snapshot
+            snapshot_url = cam_config.get("snapshot")
+            if snapshot_url:
+                # Use a temporary CameraStream instance to leverage its auth logic
+                stream = CameraStream(name, cam_config)
+                raw_frame = stream._fetch_frame()
+
+        if raw_frame:
+            self._save_frame(name, raw_frame)
+
+    def _save_frame(self, name, frame_bytes):
+        """Saves a frame to the disk."""
+        try:
+            cam_path = os.path.join(TIMELAPSE_STORAGE_PATH, name)
+            os.makedirs(cam_path, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            filename = os.path.join(cam_path, f"{timestamp}.jpg")
+            with open(filename, "wb") as f:
+                f.write(frame_bytes)
+        except Exception as e:
+            print(f"WARNING: timelapse failed to save frame for '{name}': {e}")
+
+    def _fetch_ffmpeg(self, stream_url):
+        """Extract a single JPEG frame from a stream using ffmpeg."""
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", stream_url,
+                    "-frames:v", "1",
+                    "-f", "image2", "-c:v", "mjpeg",
+                    "-q:v", "3",
+                    "pipe:1"
+                ],
+                capture_output=True, timeout=10
+            )
+            if proc.returncode == 0 and proc.stdout:
+                return proc.stdout
+        except Exception as e:
+            print(f"WARNING: ffmpeg capture failed for '{stream_url}': {e}")
+        return None
 
 # ── Photo cache ──────────────────────────────────────────
 _photo_cache = []
