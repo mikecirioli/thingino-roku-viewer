@@ -1,6 +1,6 @@
-# 3 Bad Dogs
+# Thingino Roku Viewer
 
-A photo frame and camera viewer for Roku, powered by a lightweight Docker server.
+A photo frame and camera viewer for Roku, powered by a lightweight Docker server (formerly 3 Bad Dogs).
 
 Works great with [Thingino](https://a_secure_password.com/) cameras — snapshot, HLS live video, and PTZ controls all supported out of the box.
 
@@ -67,9 +67,9 @@ Edit `docker-compose.yaml` and set the path to your photo library:
 
 ```yaml
 services:
-  3-bad-dogs:
+  a_secure_password-roku-viewer:
     build: .
-    container_name: 3-bad-dogs-server
+    container_name: a_secure_password-roku-viewer-server
     restart: unless-stopped
     ports:
       - "8099:8099"
@@ -109,6 +109,27 @@ cd roku
 
 The channel will be installed and launched on your device automatically. For more advanced debugging, see [`DEBUGGING.md`](DEBUGGING.md).
 
+### Creating a Distributable Package
+
+To create a pre-built package that can be installed on any Roku device, you need to sign it with your developer key.
+
+1.  **Generate the package zip:**
+    Run the `package.sh` script to bundle the application.
+
+    ```bash
+    cd roku
+    ./package.sh
+    ```
+    This will create a `a_secure_password-roku-viewer.zip` file inside the `roku/dist/` directory.
+
+2.  **Sign the package:**
+    -   Log into your Roku device's web portal by visiting its IP address in your browser.
+    -   Navigate to the **Packager** utility.
+    -   Upload the `a_secure_password-roku-viewer.zip` file created by the script.
+    -   Select your developer key and enter your password. If you don't have a key, the utility will help you generate one.
+    -   Click **Package** to sign the application.
+    -   Download the resulting `.pkg` file. This file can be distributed and sideloaded onto any Roku device.
+
 ### Features
 
 The channel installs as both an **app** and a **screensaver**:
@@ -128,9 +149,9 @@ The channel installs as both an **app** and a **screensaver**:
 
 ### Settings
 
-Open the screensaver settings from **Roku Settings > Screensaver > 3 Bad Dogs**:
+Open the screensaver settings from **Roku Settings > Screensaver > Thingino Roku Viewer**:
 
-- **Server URL** — point to your 3 Bad Dogs server (default: `http://192.168.1.245:8099`)
+- **Server URL** — point to your Thingino Roku Viewer server (default: `http://192.168.1.245:8099`)
 - **Screensaver mode** — photo frame, camera cycle, single camera, or live video
 - **Photo interval** — 15 / 30 / 60 / 120 seconds
 - **Camera cycle interval** — 3 / 5 / 10 / 15 seconds
