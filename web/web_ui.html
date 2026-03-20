@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Thingino Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         :root {
             --bg-color: #121212; --sidebar-bg: #1e1e1e; --text-color: #e0e0e0;
@@ -223,7 +224,7 @@
             els.tlCamSelectMsg.style.display = 'none';
             els.tlCamContent.style.display = 'block';
             els.tlHeader.textContent = `Time-lapse for ${state.activeCam}`;
-            els.videoList.innerHTML = '<li>Loading videos...</li>';
+            els.tlVideoList.innerHTML = '<li>Loading videos...</li>';
             
             const [videosRes, summaryRes] = await Promise.all([
                 fetch(`/timelapse/videos?camera=${state.activeCam}`), // Assuming future filtering
@@ -239,10 +240,10 @@
 
         function renderVideoList(videos) {
             if (videos.length === 0) {
-                els.videoList.innerHTML = '<li>No videos generated for this camera yet.</li>';
+                els.tlVideoList.innerHTML = '<li>No videos generated for this camera yet.</li>';
                 return;
             }
-            els.videoList.innerHTML = videos.map(v => {
+            els.tlVideoList.innerHTML = videos.map(v => {
                 const [start, end] = v.filename.replace('-timelapse.mp4', '').split('-to-');
                 const niceName = `From ${new Date(start.replace('_', ' ')).toLocaleString()} to ${new Date(end.replace('_', ' ')).toLocaleString()}`;
                 const wallClockDuration = new Date(end.replace('_', ' ')) - new Date(start.replace('_', ' '));
