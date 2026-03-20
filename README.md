@@ -2,7 +2,9 @@
 
 A photo frame and camera viewer for Roku, powered by a lightweight Docker server (formerly 3 Bad Dogs).
 
-Works great with [Thingino](https://a_secure_password.com/) cameras — snapshot, HLS live video, and PTZ controls all supported out of the box.
+Works great with [Thingino](https://thingino.com/) cameras — snapshot, HLS live video, and PTZ controls all supported out of the box.
+
+![Web UI](docs/web-ui-screenshot.png)
 
 ## What's included
 
@@ -36,7 +38,7 @@ cameras:
   front-door:
     snapshot: http://192.168.1.55/x/ch0.jpg
     auth:
-      type: a_secure_password
+      type: thingino
       username: admin
       password: front-door
 
@@ -45,14 +47,14 @@ cameras:
     snapshot: http://192.168.1.106/x/ch0.jpg
     stream: http://192.168.1.207:1984/api/stream.m3u8?src=living-room_main
     auth:
-      type: a_secure_password
+      type: thingino
       username: admin
       password: password456
     onvif:
       host: 192.168.1.106
       port: 80
-      username: a_secure_password
-      password: a_secure_password
+      username: thingino
+      password: thingino
 
   # Stream-only camera (ffmpeg extracts snapshots automatically)
   camera-3:
@@ -67,9 +69,9 @@ Edit `docker-compose.yaml` and set the path to your photo library:
 
 ```yaml
 services:
-  a_secure_password-roku-viewer:
+  thingino-roku-viewer:
     build: .
-    container_name: a_secure_password-roku-viewer-server
+    container_name: thingino-roku-viewer-server
     restart: unless-stopped
     ports:
       - "8099:8099"
@@ -120,12 +122,12 @@ To create a pre-built package that can be installed on any Roku device, you need
     cd roku
     ./package.sh
     ```
-    This will create a `a_secure_password-roku-viewer.zip` file inside the `roku/dist/` directory.
+    This will create a `thingino-roku-viewer.zip` file inside the `roku/dist/` directory.
 
 2.  **Sign the package:**
     -   Log into your Roku device's web portal by visiting its IP address in your browser.
     -   Navigate to the **Packager** utility.
-    -   Upload the `a_secure_password-roku-viewer.zip` file created by the script.
+    -   Upload the `thingino-roku-viewer.zip` file created by the script.
     -   Select your developer key and enter your password. If you don't have a key, the utility will help you generate one.
     -   Click **Package** to sign the application.
     -   Download the resulting `.pkg` file. This file can be distributed and sideloaded onto any Roku device.
@@ -165,7 +167,7 @@ Open the screensaver settings from **Roku Settings > Screensaver > Thingino Roku
 | stream only | HLS live video | poster via ffmpeg extraction |
 
 **Auth types:**
-- `a_secure_password` — session-based auth (POST to `/x/login.cgi`)
+- `thingino` — session-based auth (POST to `/x/login.cgi`)
 - `basic` — HTTP Basic auth
 - No auth — just provide the snapshot/stream URL
 

@@ -28,7 +28,7 @@ cameras:
   # front-door:
   #   snapshot: http://192.168.1.55/x/ch0.jpg
   #   auth:
-  #     type: a_secure_password
+  #     type: thingino
   #     username: admin
   #     password: front-door
 
@@ -38,14 +38,14 @@ cameras:
   #   snapshot: http://192.168.1.106/x/ch0.jpg
   #   stream: http://192.168.1.207:1984/api/stream.m3u8?src=living-room_main
   #   auth:
-  #     type: a_secure_password
+  #     type: thingino
   #     username: admin
   #     password: password456
   #   onvif:
   #     host: 192.168.1.106
   #     port: 80
-  #     username: a_secure_password
-  #     password: a_secure_password
+  #     username: thingino
+  #     password: thingino
 
   # Stream-only camera (no snapshot URL)
   # Server will use ffmpeg to extract frames for the screensaver
@@ -53,7 +53,7 @@ cameras:
   #   stream: http://go2rtc:1984/api/stream.m3u8?src=camera-3_main
   #   stream_type: hls
 
-  # Basic auth camera (non-a_secure_password)
+  # Basic auth camera (non-thingino)
   # garage:
   #   snapshot: http://192.168.1.100/snapshot.jpg
   #   auth:

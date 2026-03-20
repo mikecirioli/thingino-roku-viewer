@@ -6,7 +6,7 @@
     <title>3 Bad Dogs - Camera Viewer</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
-        :admin {
+        :root {
             --bg-color: #1a1a2e;
             --sidebar-bg: #162447;
             --text-color: #e0e0e0;
@@ -351,11 +351,20 @@
         function cleanupPlayer() {
             els.video.style.display = 'none';
             els.video.pause();
-            els.video.removeAttribute('src');
             els.img.style.display = 'none';
             if (state.hls) { state.hls.destroy(); state.hls = null; }
             if (state.ws) { state.ws.close(); state.ws = null; }
-            if (state.mse) { state.mse = null; }
+            if (state.mse) {
+                if (state.mse.readyState === 'open') {
+                    try { state.mse.endOfStream(); } catch(e) {}
+                }
+                state.mse = null;
+            }
+            if (els.video.src) {
+                URL.revokeObjectURL(els.video.src);
+                els.video.removeAttribute('src');
+                els.video.load();
+            }
             if (state.imgInterval) { clearInterval(state.imgInterval); state.imgInterval = null; }
         }
 
@@ -391,7 +400,11 @@
                             try {
                                 sb = ms.addSourceBuffer(codec);
                                 sb.mode = 'segments';
-                                sb.addEventListener('updateend', appendNext);
+                                sb.addEventListener('updateend', () => {
+                                    appendNext();
+                                    // Start playback once we have data
+                                    if (videoEl.paused) videoEl.play().catch(()=>{});
+                                });
                             } catch(e) {
                                 console.error('MSE addSourceBuffer failed:', codec, e);
                             }
