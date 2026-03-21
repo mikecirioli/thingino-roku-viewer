@@ -53,7 +53,12 @@ sub doRequest()
     if req.method <> invalid then method = req.method
 
     ' Execute request asynchronously
-    if method = "POST"
+    if req.toFile <> invalid and req.toFile <> ""
+        if not http.AsyncGetToFile(req.toFile)
+            m.top.error = "Failed to start GET to file"
+            return
+        end if
+    else if method = "POST"
         http.AddHeader("Content-Type", "application/json")
         body = ""
         if req.body <> invalid then body = req.body

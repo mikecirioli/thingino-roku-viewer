@@ -226,6 +226,7 @@
             <div id="tab-bar">
                 <button class="tab-btn active" data-tab="live">Live View</button>
                 <button class="tab-btn" data-tab="timelapse">Time-lapse</button>
+                <button class="tab-btn" data-tab="config">Configuration</button>
             </div>
             <div id="live-view">
                 <div id="loading-msg">Loading cameras...</div>
@@ -297,6 +298,75 @@
                     </div>
                 </div>
             </div>
+
+            <div id="config-view" style="display: none; flex-direction: column; padding: 20px; overflow-y: auto;">
+                <div class="tl-section">
+                    <h2>Camera Configuration</h2>
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn" id="btn-add-camera">Add New Camera</button>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid var(--border-color); color: var(--accent-color);">
+                                <th style="padding: 10px;">Name</th>
+                                <th style="padding: 10px;">Snapshot URL</th>
+                                <th style="padding: 10px;">Auth</th>
+                                <th style="padding: 10px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="config-camera-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="camera-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 200; justify-content: center; align-items: center;">
+        <div class="modal-content" style="width: 600px; max-height: 90vh; overflow-y: auto;">
+            <h2 id="camera-modal-title">Edit Camera</h2>
+            <input type="hidden" id="edit-cam-id">
+            <div class="form-group">
+                <label>Name (lowercase, no spaces)</label>
+                <input type="text" id="edit-cam-name" placeholder="front-door">
+            </div>
+            <div class="form-group">
+                <label>Snapshot URL</label>
+                <input type="text" id="edit-cam-snapshot" placeholder="http://192.168.1.55/x/ch0.jpg">
+            </div>
+            <div class="form-group">
+                <label>Stream URL (optional)</label>
+                <input type="text" id="edit-cam-stream" placeholder="http://192.168.1.55:1984/api/stream.m3u8?src=front-door_main">
+            </div>
+            <div class="form-group">
+                <label>Auth Type</label>
+                <select id="edit-cam-auth-type">
+                    <option value="none">None</option>
+                    <option value="basic">Basic Auth</option>
+                    <option value="thingino">Thingino (Session)</option>
+                </select>
+            </div>
+            <div id="edit-cam-auth-fields" style="display: none;">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="edit-cam-user">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="edit-cam-pass">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>ONVIF Host (for PTZ, optional)</label>
+                <input type="text" id="edit-cam-onvif-host" placeholder="192.168.1.55">
+            </div>
+            <div class="modal-actions" style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn" id="btn-test-camera">Test Snapshot</button>
+                <button class="btn" id="btn-save-camera" style="background-color: var(--accent-color);">Save Camera</button>
+                <button class="btn" id="btn-cancel-camera" style="background-color: #555;">Cancel</button>
+            </div>
+            <div id="test-result" style="margin-top: 15px; text-align: center;"></div>
         </div>
     </div>
 
@@ -411,6 +481,20 @@
             tlCaptureEnabled: document.getElementById('tl-capture-enabled'),
             tlCaptureInterval: document.getElementById('tl-capture-interval'),
             tlCaptureStatus: document.getElementById('tl-capture-status'),
+            // Config
+            configView: document.getElementById('config-view'),
+            configCameraList: document.getElementById('config-camera-list'),
+            cameraModal: document.getElementById('camera-modal'),
+            editCamId: document.getElementById('edit-cam-id'),
+            editCamName: document.getElementById('edit-cam-name'),
+            editCamSnapshot: document.getElementById('edit-cam-snapshot'),
+            editCamStream: document.getElementById('edit-cam-stream'),
+            editCamAuthType: document.getElementById('edit-cam-auth-type'),
+            editCamAuthFields: document.getElementById('edit-cam-auth-fields'),
+            editCamUser: document.getElementById('edit-cam-user'),
+            editCamPass: document.getElementById('edit-cam-pass'),
+            editCamOnvifHost: document.getElementById('edit-cam-onvif-host'),
+            testResult: document.getElementById('test-result'),
         };
 
         // Load Settings
@@ -430,17 +514,21 @@
         function switchTab(tab) {
             state.activeTab = tab;
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            
+            els.liveView.style.display = tab === 'live' ? 'flex' : 'none';
+            els.timelapseView.style.display = tab === 'timelapse' ? 'block' : 'none';
+            els.configView.style.display = tab === 'config' ? 'flex' : 'none';
+
             renderSidebar();
+            cleanupPlayer();
+
             if (tab === 'live') {
-                els.liveView.style.display = 'flex';
-                els.timelapseView.style.display = 'none';
                 if (state.activeCam) selectCamera(state.activeCam, state.activeMode);
-            } else {
-                els.liveView.style.display = 'none';
-                els.timelapseView.style.display = 'block';
-                cleanupPlayer();
+            } else if (tab === 'timelapse') {
                 if (state.activeCam) selectCamera(state.activeCam, 'timelapse');
                 else if (state.camNames.length) selectCamera(state.camNames[0], 'timelapse');
+            } else if (tab === 'config') {
+                loadCameraConfig();
             }
         }
 
@@ -1115,6 +1203,154 @@
             settings.interval = parseInt(els.setPhotoInt.value, 10) || 30;
             localStorage.setItem('3bad_settings', JSON.stringify(settings));
             els.settingsModal.style.display = 'none';
+        };
+
+        // --- Configuration Manager ---
+        let _camConfig = {};
+
+        async function loadCameraConfig() {
+            try {
+                const res = await fetch('/camera/config');
+                if (!res.ok) throw new Error(res.status);
+                _camConfig = await res.json();
+                renderConfigList();
+            } catch (err) {
+                console.error('Failed to load camera config:', err);
+                els.configCameraList.innerHTML = `<tr><td colspan="4" style="color:red; padding:20px;">Failed to load configuration from server. Make sure cameras.yaml is present.</td></tr>`;
+            }
+        }
+
+        function renderConfigList() {
+            els.configCameraList.innerHTML = '';
+            Object.keys(_camConfig).sort().forEach(name => {
+                const cam = _camConfig[name];
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+                tr.innerHTML = `
+                    <td style="padding:10px;">${name}</td>
+                    <td style="padding:10px; font-size:0.85em; opacity:0.7; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cam.snapshot || 'N/A'}</td>
+                    <td style="padding:10px;">${cam.auth?.type || 'none'}</td>
+                    <td style="padding:10px;">
+                        <button class="btn btn-edit-cam" data-id="${name}" style="padding:4px 10px; font-size:0.85em;">Edit</button>
+                        <button class="btn btn-delete-cam" data-id="${name}" style="padding:4px 10px; font-size:0.85em; background-color:#d32f2f;">Delete</button>
+                    </td>
+                `;
+                els.configCameraList.appendChild(tr);
+            });
+        }
+
+        function showCameraModal(name = '') {
+            const cam = name ? _camConfig[name] : { snapshot: '', stream: '', auth: { type: 'none' } };
+            els.editCamId.value = name;
+            els.editCamName.value = name;
+            els.editCamName.readOnly = !!name;
+            els.editCamSnapshot.value = cam.snapshot || '';
+            els.editCamStream.value = cam.stream || '';
+            els.editCamAuthType.value = cam.auth?.type || 'none';
+            els.editCamUser.value = cam.auth?.username || '';
+            els.editCamPass.value = cam.auth?.password || '';
+            els.editCamOnvifHost.value = cam.onvif?.host || '';
+            
+            toggleAuthFields();
+            els.testResult.innerHTML = '';
+            els.cameraModal.style.display = 'flex';
+        }
+
+        function toggleAuthFields() {
+            els.editCamAuthFields.style.display = els.editCamAuthType.value === 'none' ? 'none' : 'block';
+        }
+        els.editCamAuthType.onchange = toggleAuthFields;
+
+        document.getElementById('btn-add-camera').onclick = () => showCameraModal();
+        
+        els.configCameraList.addEventListener('click', e => {
+            const editBtn = e.target.closest('.btn-edit-cam');
+            const deleteBtn = e.target.closest('.btn-delete-cam');
+            if (editBtn) showCameraModal(editBtn.dataset.id);
+            if (deleteBtn) {
+                const name = deleteBtn.dataset.id;
+                if (confirm(`Are you sure you want to delete camera "${name}"?`)) {
+                    delete _camConfig[name];
+                    saveCameraConfig();
+                }
+            }
+        });
+
+        document.getElementById('btn-cancel-camera').onclick = () => { els.cameraModal.style.display = 'none'; };
+
+        document.getElementById('btn-save-camera').onclick = async () => {
+            const name = els.editCamName.value.trim().toLowerCase().replace(/\s+/g, '-');
+            if (!name) return alert('Name is required');
+            
+            const cam = {
+                snapshot: els.editCamSnapshot.value.trim(),
+                stream: els.editCamStream.value.trim(),
+            };
+            
+            const authType = els.editCamAuthType.value;
+            if (authType !== 'none') {
+                cam.auth = {
+                    type: authType,
+                    username: els.editCamUser.value.trim(),
+                    password: els.editCamPass.value.trim()
+                };
+            }
+            
+            const onvifHost = els.editCamOnvifHost.value.trim();
+            if (onvifHost) {
+                cam.onvif = { host: onvifHost };
+            }
+            
+            _camConfig[name] = cam;
+            await saveCameraConfig();
+            els.cameraModal.style.display = 'none';
+        };
+
+        async function saveCameraConfig() {
+            try {
+                const res = await fetch('/camera/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(_camConfig)
+                });
+                if (res.ok) {
+                    await loadCameraConfig();
+                } else {
+                    const err = await res.text();
+                    alert('Error saving configuration: ' + err);
+                }
+            } catch (err) {
+                alert('Failed to save configuration: ' + err.message);
+            }
+        }
+
+        document.getElementById('btn-test-camera').onclick = async () => {
+            const name = els.editCamName.value.trim();
+            if (!name) return alert('Name is required to test');
+            
+            els.testResult.innerHTML = '<span style="color:var(--accent-color)">Testing snapshot connection via server proxy...</span>';
+            
+            // To test a camera that isn't saved yet, we'd need a special test endpoint.
+            if (!_camConfig[name]) {
+                els.testResult.innerHTML = '<span style="color:#ff6b6b">Please save the camera first to test via server proxy.</span>';
+                return;
+            }
+
+            const img = new Image();
+            img.onload = () => {
+                els.testResult.innerHTML = '<span style="color:#4caf50">Success! Snapshot received.</span><br>';
+                const previewImg = document.createElement('img');
+                previewImg.style.maxWidth = '200px';
+                previewImg.style.marginTop = '10px';
+                previewImg.style.borderRadius = '4px';
+                previewImg.style.border = '2px solid var(--accent-color)';
+                previewImg.src = `/camera/${name}?t=${Date.now()}`;
+                els.testResult.appendChild(previewImg);
+            };
+            img.onerror = () => {
+                els.testResult.innerHTML = '<span style="color:#ff6b6b">Failed to fetch snapshot. Check URLs and credentials.</span>';
+            };
+            img.src = `/camera/${name}?t=${Date.now()}`;
         };
 
         init();

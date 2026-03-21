@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<component name="CameraEditView" extends="Group">
+  <interface>
+    <field id="cameraData" type="assocarray" />
+    <field id="saveClicked" type="boolean" value="false" />
+    <field id="cancelClicked" type="boolean" value="false" />
+  </interface>
+  <children>
+    <Rectangle width="1920" height="1080" color="#1a1a2e" />
+
+    <LayoutGroup translation="[100,60]" layoutDirection="horiz" itemSpacings="[100]">
+      <!-- Form Column -->
+      <LayoutGroup layoutDirection="vert" itemSpacings="[12]">
+        <Label id="title" text="Edit Camera" color="#FFFFFF">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="24" />
+        </Label>
+
+        <!-- Name -->
+        <Label text="Camera Name:" color="#AAAAAA" />
+        <Group>
+          <Rectangle width="700" height="44" color="#FFFFFF15" />
+          <Label id="nameLabel" text="" color="#FFFFFF" translation="[12,10]" width="676" />
+        </Group>
+        <Button id="editNameBtn" text="Edit Name" />
+
+        <!-- Snapshot URL -->
+        <Label text="Snapshot URL:" color="#AAAAAA" />
+        <Group>
+          <Rectangle width="700" height="44" color="#FFFFFF15" />
+          <Label id="snapshotLabel" text="" color="#FFFFFF" translation="[12,10]" width="676" />
+        </Group>
+        <Button id="editSnapshotBtn" text="Edit Snapshot URL" />
+
+        <!-- Stream URL -->
+        <Label text="Stream URL (optional):" color="#AAAAAA" />
+        <Group>
+          <Rectangle width="700" height="44" color="#FFFFFF15" />
+          <Label id="streamLabel" text="" color="#FFFFFF" translation="[12,10]" width="676" />
+        </Group>
+        <Button id="editStreamBtn" text="Edit Stream URL" />
+
+        <!-- Auth Type -->
+        <Label text="Auth Type:" color="#AAAAAA" />
+        <RadioButtonList id="authList">
+          <ContentNode role="content">
+            <ContentNode title="None" />
+            <ContentNode title="Basic Auth" />
+            <ContentNode title="Thingino (Session)" />
+          </ContentNode>
+        </RadioButtonList>
+
+        <!-- ONVIF Host -->
+        <Label text="ONVIF Host (optional, for PTZ):" color="#AAAAAA" />
+        <Group>
+          <Rectangle width="700" height="44" color="#FFFFFF15" />
+          <Label id="onvifLabel" text="" color="#FFFFFF" translation="[12,10]" width="676" />
+        </Group>
+        <Button id="editOnvifBtn" text="Edit ONVIF Host" />
+      </LayoutGroup>
+
+      <!-- Auth & Preview Column -->
+      <LayoutGroup layoutDirection="vert" itemSpacings="[12]">
+        <!-- Username -->
+        <Label text="Username:" color="#AAAAAA" />
+        <Group>
+          <Rectangle width="500" height="44" color="#FFFFFF15" />
+          <Label id="userLabel" text="" color="#FFFFFF" translation="[12,10]" width="476" />
+        </Group>
+        <Button id="editUserBtn" text="Edit Username" />
+
+        <!-- Password -->
+        <Label text="Password:" color="#AAAAAA" />
+        <Group>
+          <Rectangle width="500" height="44" color="#FFFFFF15" />
+          <Label id="passLabel" text="" color="#FFFFFF" translation="[12,10]" width="476" />
+        </Group>
+        <Button id="editPassBtn" text="Edit Password" />
+
+        <Rectangle width="500" height="1" color="#FFFFFF33" />
+
+        <!-- Preview -->
+        <Label text="Preview:" color="#AAAAAA" />
+        <Poster id="testPoster" width="400" height="225" loadDisplayMode="scaleToFit" />
+        <Button id="testBtn" text="Test Connection" />
+
+        <LayoutGroup layoutDirection="horiz" itemSpacings="[20]" translation="[0, 40]">
+          <Button id="saveBtn" text="Save" />
+          <Button id="cancelBtn" text="Cancel" />
+        </LayoutGroup>
+      </LayoutGroup>
+    </LayoutGroup>
+
+  </children>
+
+  <script type="text/brightscript" uri="CameraEditView.brs" />
+</component>

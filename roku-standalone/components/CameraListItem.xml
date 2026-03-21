@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<!-- https://creativecommons.org/licenses/by-nc-sa/4.0/ -->
+<component name="CameraListItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContentChanged" />
+    <field id="focusPercent" type="float" onChange="onFocusChanged" />
+  </interface>
+
+  <children>
+    <Rectangle id="bg" width="400" height="56" color="#FFFFFF10"               translation="[0,2]" />
+    <Label id="nameLabel" text="" color="#FFFFFF"
+           translation="[16,14]" width="340">
+      <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="20" />
+    </Label>
+    <Label id="typeLabel" text="" color="#888888"
+           translation="[16,36]" width="340">
+      <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="12" />
+    </Label>
+  </children>
+
+  <script type="text/brightscript" uri="CameraListItem.brs" />
+</component>

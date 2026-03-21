@@ -362,6 +362,32 @@ def _load_cameras():
             print("WARNING: CAMERAS env var is not valid JSON, ignoring")
 
 
+def _save_cameras():
+    """Save current camera config back to YAML file."""
+    try:
+        import yaml
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(CAMERAS_FILE), exist_ok=True)
+        
+        full_cfg = {}
+        if os.path.isfile(CAMERAS_FILE):
+            try:
+                with open(CAMERAS_FILE) as f:
+                    full_cfg = yaml.safe_load(f) or {}
+            except Exception as e:
+                print(f"WARNING: failed to parse existing {CAMERAS_FILE}: {e}")
+        
+        full_cfg["cameras"] = _CAMERAS
+        
+        with open(CAMERAS_FILE, "w") as f:
+            yaml.safe_dump(full_cfg, f, default_flow_style=False)
+        print(f"  cameras: saved {len(_CAMERAS)} to {CAMERAS_FILE}")
+        return True
+    except Exception as e:
+        print(f"WARNING: failed to save {CAMERAS_FILE}: {e}")
+    return False
+
+
 def _go2rtc_streams():
     """Fetch stream names from go2rtc, return list of base camera names."""
     if not GO2RTC_URL:
@@ -1005,8 +1031,51 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_timelapse_generate()
         elif path == "/timelapse/config":
             self.handle_timelapse_config_post()
+        elif path == "/camera/config":
+            self.handle_camera_config_post()
         else:
             self.send_error(404)
+
+    def handle_camera_config_post(self):
+        """POST /camera/config — update global camera configuration."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        if not isinstance(data, dict):
+            self.send_error(400, "Expected JSON object")
+            return
+
+        global _CAMERAS
+        _CAMERAS = data
+        
+        # Clear existing stream objects so they are re-initialized with new config.
+        # We don't need a lock here because we're replacing the global dict reference,
+        # but we should ensure the timelapse capturer is aware of the change.
+        # Note: _streams is not actually a global variable, it's usually inside PhotoHandler or a local cache.
+        # Looking at server.py, it's not defined at the top level. 
+        # I will remove the _streams reference as it's handled per-request or via CameraStream instances.
+        
+        # Update active timelapse capturer if it exists
+        if timelapse_capturer:
+            timelapse_capturer._cameras = _CAMERAS
+            # We don't have a full refresh method yet, but capturer will 
+            # pick up new configs for existing cameras on next cycle.
+            # New cameras won't start capturing automatically until next restart
+            # or until set_config is called for them.
+
+        if _save_cameras():
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode())
+        else:
+            self.send_error(500, "Failed to persist configuration to file")
 
     def handle_timelapse_generate(self):
         """Handle a request to generate a new timelapse video."""
@@ -1153,6 +1222,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_ha(path)
         elif path == "/timelapse/config":
             self.serve_timelapse_config()
+        elif path == "/camera/config":
+            self.serve_camera_config()
         elif path == "/timelapse/summary":
             self.serve_timelapse_summary()
         elif path == "/timelapse/videos":
@@ -1172,6 +1243,14 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         else:
             self.send_error(404)
+
+    def serve_camera_config(self):
+        """GET /camera/config — return global camera configuration."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(_CAMERAS).encode())
 
     def serve_timelapse_config(self):
         """GET /timelapse/config?camera=<name> — return capture config for a camera."""

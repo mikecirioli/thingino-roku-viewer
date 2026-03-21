@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<component name="ScreensaverScene" extends="Group">
+  <interface>
+    <field id="backToConfig" type="boolean" value="false" />
+  </interface>
+  <children>
+    <Rectangle width="1920" height="1080" color="#000000" />
+    
+    <Poster id="posterA" width="1920" height="1080" loadDisplayMode="scaleToFit" visible="true" />
+    <Poster id="posterB" width="1920" height="1080" loadDisplayMode="scaleToFit" visible="false" />
+    
+    <Video id="video" width="1920" height="1080" visible="false" />
+
+    <Group id="labelGroup" translation="[60,980]">
+      <Rectangle width="400" height="60" color="#000000AA" />
+      <Label id="nameLabel" text="" color="#FFFFFF" translation="[20,12]">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="24" />
+      </Label>
+    </Group>
+
+    <!-- Cycle timer (e.g. 10 seconds per camera) -->
+    <Timer id="cycleTimer" repeat="true" duration="10" />
+    <!-- Snapshot refresh timer (1 second) -->
+    <Timer id="refreshTimer" repeat="true" duration="1" />
+  </children>
+
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="ScreensaverScene.brs" />
+</component>

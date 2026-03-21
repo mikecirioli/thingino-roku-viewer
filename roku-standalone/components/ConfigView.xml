@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<component name="ConfigView" extends="Group">
+  <interface>
+    <field id="launchViewer" type="boolean" value="false" />
+    <field id="launchScreensaver" type="boolean" value="false" />
+  </interface>
+  <children>
+    <Rectangle width="1920" height="1080" color="#0a0a1a" />
+
+    <!-- Header -->
+    <LayoutGroup translation="[60,40]" layoutDirection="vert" itemSpacings="[8]">
+      <Label id="appTitle" text="Thingino Viewer (Standalone)" color="#FFFFFF" />
+      <Label id="appSubtitle" text="Manage your cameras" color="#888888">
+        <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+      </Label>
+    </LayoutGroup>
+
+    <!-- Camera list (left side) -->
+    <MarkupList id="cameraList" translation="[60,140]"
+                itemSize="[400,60]" numRows="12"
+                drawFocusFeedback="true"
+                focusBitmapBlendColor="#FF6700"
+                itemComponentName="CameraListItem">
+      <ContentNode id="cameraListContent" role="content" />
+    </MarkupList>
+
+    <!-- Details area (right side) -->
+    <Group id="detailsGroup" translation="[520,140]">
+      <Rectangle width="1340" height="754" color="#000000" />
+      
+      <!-- Preview -->
+      <Poster id="previewPoster" width="1340" height="754" loadDisplayMode="scaleToFit" visible="true" />
+      <Video id="previewVideo" width="1340" height="754" visible="false" />
+
+      <!-- Info & Buttons -->
+      <Group id="infoGroup" translation="[0,770]">
+        <Label id="cameraNameLabel" text="No camera selected" color="#FFFFFF">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="24" />
+        </Label>
+        <Label id="cameraUrlLabel" text="" color="#888888" translation="[0,40]">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
+        </Label>
+        
+        <LayoutGroup id="buttonGroup" translation="[0,100]" layoutDirection="horiz" itemSpacings="[20]">
+          <Button id="addBtn" text="Add New" />
+          <Button id="editBtn" text="Edit" />
+          <Button id="deleteBtn" text="Delete" />
+          <Button id="viewBtn" text="Launch Viewer" />
+          <Button id="saverBtn" text="Screensaver" />
+        </LayoutGroup>
+      </Group>
+    </Group>
+
+    <!-- Overlay for Add/Edit -->
+    <Group id="formContainer" visible="false" />
+
+    <Timer id="refreshTimer" repeat="true" duration="5" />
+  </children>
+
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="ConfigView.brs" />
+</component>
