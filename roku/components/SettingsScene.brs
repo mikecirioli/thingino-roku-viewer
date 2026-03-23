@@ -67,15 +67,21 @@ sub init()
         m.modeList.checkedItem = 1
     end if
 
-    m.editUrlBtn.setFocus(true)
     m.editUrlBtn.observeField("buttonSelected", "onEditUrl")
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
 
+    ' Defer focus until scene is fully rendered
+    m.top.observeField("visible", "onSceneVisible")
+
     ' Fetch camera list
     m.loading.visible = true
     fetchCameraList()
+end sub
+
+sub onSceneVisible()
+    if m.top.visible then m.editUrlBtn.setFocus(true)
 end sub
 
 ' -- Server URL editing --
@@ -272,5 +278,32 @@ sub onCycleIntervalChanged()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' Manual focus navigation — LayoutGroup does NOT do this automatically.
+    ' RadioButtonList consumes up/down internally; if those keys reach us,
+    ' the list is at a boundary and we should move to the next control.
+    controls = [m.editUrlBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList]
+    n = controls.count()
+
+    idx = -1
+    for i = 0 to n - 1
+        if controls[i].hasFocus() or controls[i].isInFocusChain() then idx = i
+    end for
+    ' Prefer exact hasFocus match (button) over isInFocusChain (list internals)
+    for i = 0 to n - 1
+        if controls[i].hasFocus() then idx = i
+    end for
+
+    if idx >= 0
+        if key = "down"
+            controls[(idx + 1) mod n].setFocus(true)
+            return true
+        else if key = "up"
+            controls[(idx - 1 + n) mod n].setFocus(true)
+            return true
+        end if
+    end if
+
     return false
 end function

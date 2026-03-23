@@ -39,6 +39,8 @@ sub init()
     if not sec.Exists("serverUrl")
         showSettings()
     else
+        ' Set focus on scene so * key works while cameras load
+        m.top.setFocus(true)
         fetchAllCameraInfo()
     end if
 end sub
@@ -87,6 +89,8 @@ sub onAllInfoError(event as object)
     if errMsg = invalid then errMsg = "Connection failed"
     m.loadingLabel.text = errMsg + ". Press * for Settings."
     m.loadingLabel.visible = true
+    ' Ensure scene has focus so * key works
+    m.top.setFocus(true)
 end sub
 
 sub onAllInfoResponse(event as object)
@@ -94,6 +98,7 @@ sub onAllInfoResponse(event as object)
     if text = invalid or text = ""
         m.loadingLabel.text = "Empty response. Press * for Settings."
         m.loadingLabel.visible = true
+        m.top.setFocus(true)
         return
     end if
 
@@ -101,6 +106,7 @@ sub onAllInfoResponse(event as object)
     if json = invalid or type(json) <> "roArray"
         m.loadingLabel.text = "Could not parse camera list. Press * for Settings."
         m.loadingLabel.visible = true
+        m.top.setFocus(true)
         return
     end if
 

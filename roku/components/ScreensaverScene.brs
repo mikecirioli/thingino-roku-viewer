@@ -94,6 +94,7 @@ sub init()
 
     ' Data chip rotation state
     m.dataIndex = 0
+    m.pendingAnimation = ""
 
     ' Observe photo load status
     m.photoA.observeField("loadStatus", "onPhotoLoadA")
@@ -109,29 +110,42 @@ sub init()
     m.photoTimer.observeField("fire", "onPhotoTimer")
     m.photoTimer.control = "start"
 
+    m.preloadSeconds = 5 ' Start loading next image 5s before it's displayed
+    m.preloadTimer = m.top.findNode("preloadTimer")
+    m.preloadTimer.observeField("fire", "onPreloadTimer")
+
     m.clockTimer = m.top.findNode("clockTimer")
     m.clockTimer.observeField("fire", "onClockTimer")
     m.clockTimer.control = "start"
-
+    
     m.dataTimer = m.top.findNode("dataTimer")
     m.dataTimer.duration = m.DATA_SEC
     m.dataTimer.observeField("fire", "onDataTimer")
     m.dataTimer.control = "start"
-
+    
     m.bounceTimer = m.top.findNode("bounceTimer")
     m.bounceTimer.observeField("fire", "onBounce")
     m.bounceTimer.control = "start"
 
+    m.animationDelayTimer = m.top.findNode("animationDelayTimer")
+    m.animationDelayTimer.observeField("fire", "onStartAnimation")
+    
     ' Camera mode setup
     if m.mode = "camera"
         m.photoA.opacity = 1.0
         m.photoB.opacity = 1.0
         if m.cycleMode then fetchCameraList()
+    else
+        ' Start pre-loading the second image immediately
+        preloadDuration = m.PHOTO_SEC - m.preloadSeconds
+        if preloadDuration < 1 then preloadDuration = 1
+        m.preloadTimer.duration = preloadDuration
+        m.preloadTimer.control = "start"
     end if
 
     ' Initial render
     updateClock()
-    loadNextImage()
+    loadNextImage() ' Load the first image
     fetchNextData()
 end sub
 
@@ -144,7 +158,7 @@ sub loadNextImage()
         url = m.SERVER_URL + "/camera/" + m.cameraName + "?t=" + ts.asSeconds().toStr()
         m.photoB.uri = url
     else
-        url = m.SERVER_URL + "/random?w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr()
+        url = m.SERVER_URL + "/random?noexif=1&w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr()
         if m.front = "a"
             m.photoB.uri = url
         else
@@ -156,9 +170,8 @@ end sub
 sub onPhotoLoadA(event as object)
     if event.getData() = "ready"
         if m.mode = "camera" then return
-        m.fadeInA.control = "start"
-        m.fadeOutB.control = "start"
-        m.front = "a"
+        m.pendingAnimation = "A"
+        m.animationDelayTimer.control = "start"
     end if
 end sub
 
@@ -168,23 +181,51 @@ sub onPhotoLoadB(event as object)
             m.photoA.uri = m.photoB.uri
             return
         end if
+        m.pendingAnimation = "B"
+        m.animationDelayTimer.control = "start"
+    end if
+end sub
+
+sub onStartAnimation()
+    if m.pendingAnimation = "A"
+        m.fadeInA.control = "start"
+        m.fadeOutB.control = "start"
+        m.front = "a"
+    else if m.pendingAnimation = "B"
         m.fadeInB.control = "start"
         m.fadeOutA.control = "start"
         m.front = "b"
     end if
+    m.pendingAnimation = ""
 end sub
 
 sub onPhotoTimer()
-    if m.cycleMode and m.cameraList.count() > 0
-        m.cycleCounter = m.cycleCounter + 1
-        cycleTicks = m.CYCLE_SEC / m.CAMERA_SEC
-        if cycleTicks < 1 then cycleTicks = 1
-        if m.cycleCounter >= cycleTicks
-            m.cycleCounter = 0
-            m.cameraIndex = (m.cameraIndex + 1) mod m.cameraList.count()
-            m.cameraName = m.cameraList[m.cameraIndex]
+    ' This timer firing means it's time to SHOW the pre-loaded image.
+    ' We now use this event to trigger the next pre-load.
+    if m.mode = "camera"
+        if m.cycleMode and m.cameraList.count() > 0
+            m.cycleCounter = m.cycleCounter + 1
+            cycleTicks = m.CYCLE_SEC / m.CAMERA_SEC
+            if cycleTicks < 1 then cycleTicks = 1
+            if m.cycleCounter >= cycleTicks
+                m.cycleCounter = 0
+                m.cameraIndex = (m.cameraIndex + 1) mod m.cameraList.count()
+                m.cameraName = m.cameraList[m.cameraIndex]
+            end if
         end if
+        loadNextImage()
+    else
+        ' The image that was pre-loading should be ready.
+        ' Now, start the timer for the *next* preload.
+        preloadDuration = m.PHOTO_SEC - m.preloadSeconds
+        if preloadDuration < 1 then preloadDuration = 1
+        m.preloadTimer.duration = preloadDuration
+        m.preloadTimer.control = "start"
     end if
+end sub
+
+sub onPreloadTimer()
+    ' It's time to start downloading the next image in the background
     loadNextImage()
 end sub
 
@@ -201,13 +242,7 @@ sub fetchCameraList()
 end sub
 
 sub onCameraListResponse(event as object)
-    task = event.getNode()
-    if task.error <> invalid and task.error <> ""
-        print "Error fetching camera list: " + task.error
-        return
-    end if
-
-    text = task.response
+    text = event.getData()
     if text = invalid or text = "" then return
 
     json = ParseJSON(text)
@@ -287,13 +322,7 @@ sub fetchNextData()
 end sub
 
 sub onDataResponse(event as object)
-    task = event.getNode()
-    if task.error <> invalid and task.error <> ""
-        print "Error fetching HA data: " + task.error
-        return
-    end if
-
-    text = task.response
+    text = event.getData()
     if text <> invalid and text <> ""
         m.dataChip.text = text
     end if

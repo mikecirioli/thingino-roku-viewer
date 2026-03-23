@@ -4,6 +4,7 @@ minor_version=1
 build_version=17
 screensaver_type=screensaver
 screensaver_title=3 Bad Dogs
+screensaver_config_id=SettingsScene
 mm_icon_focus_hd=pkg:/images/icon.png
 mm_icon_side_hd=pkg:/images/icon.png
 splash_screen_hd=pkg:/images/splash.jpg

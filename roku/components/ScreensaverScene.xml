@@ -54,9 +54,11 @@
 
     <!-- Timers -->
     <Timer id="photoTimer" repeat="true" duration="30" />
+    <Timer id="preloadTimer" repeat="false" duration="25" />
     <Timer id="clockTimer" repeat="true" duration="30" />
     <Timer id="dataTimer" repeat="true" duration="120" />
     <Timer id="bounceTimer" repeat="true" duration="1" />
+    <Timer id="animationDelayTimer" repeat="false" duration="0.01" />
   </children>
 
   <script type="text/brightscript" uri="ScreensaverScene.brs" />

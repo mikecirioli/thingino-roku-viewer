@@ -77,20 +77,20 @@ sub init()
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
 
-    ' Focus navigation grid: [row][col] where col 0=left, col 1=right
-    m.focusGrid = [
-        [m.editUrlBtn, m.modeList],
-        [m.editUserBtn, m.photoIntervalList],
-        [m.editPassBtn, m.cycleIntervalList]
-    ]
-    m.focusRow = 0
-    m.focusCol = 0
-
     m.loading.visible = true
     fetchCameraList()
 
-    ' Set initial focus on first button
-    m.editUrlBtn.setFocus(true)
+    ' Redirect focus from the Group to the first button.
+    ' When the parent calls setFocus(true) on this Group, hasFocus()
+    ' fires and we redirect to editUrlBtn automatically.
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+sub onFocusChanged()
+    ' If the Group itself has focus (not a child), redirect to first button
+    if m.top.hasFocus()
+        m.editUrlBtn.setFocus(true)
+    end if
 end sub
 
 ' -- Dialogs --
@@ -104,8 +104,9 @@ sub onEditUrl()
 end sub
 
 sub onUrlDialogButton(event as object)
+    dialog = m.top.getScene().dialog
     if event.getData() = 0
-        newUrl = event.getNode().text
+        newUrl = dialog.text
         if newUrl <> "" and newUrl <> m.SERVER_URL
             m.SERVER_URL = newUrl
             m.urlLabel.text = newUrl
@@ -116,7 +117,7 @@ sub onUrlDialogButton(event as object)
         end if
     end if
     m.top.getScene().dialog = invalid
-    m.focusGrid[m.focusRow][m.focusCol].setFocus(true)
+    m.editUrlBtn.setFocus(true)
 end sub
 
 sub onEditUsername()
@@ -129,8 +130,9 @@ sub onEditUsername()
 end sub
 
 sub onUsernameDialogButton(event as object)
+    dialog = m.top.getScene().dialog
     if event.getData() = 0
-        newUser = event.getNode().text
+        newUser = dialog.text
         if newUser <> m.USERNAME
             m.USERNAME = newUser
             m.userLabel.text = newUser
@@ -141,7 +143,7 @@ sub onUsernameDialogButton(event as object)
         end if
     end if
     m.top.getScene().dialog = invalid
-    m.focusGrid[m.focusRow][m.focusCol].setFocus(true)
+    m.editUrlBtn.setFocus(true)
 end sub
 
 sub onEditPassword()
@@ -155,8 +157,9 @@ sub onEditPassword()
 end sub
 
 sub onPasswordDialogButton(event as object)
+    dialog = m.top.getScene().dialog
     if event.getData() = 0
-        newPass = event.getNode().text
+        newPass = dialog.text
         if newPass <> m.PASSWORD
             m.PASSWORD = newPass
             if newPass = ""
@@ -171,7 +174,7 @@ sub onPasswordDialogButton(event as object)
         end if
     end if
     m.top.getScene().dialog = invalid
-    m.focusGrid[m.focusRow][m.focusCol].setFocus(true)
+    m.editUrlBtn.setFocus(true)
 end sub
 
 sub refreshCameraList()
@@ -326,11 +329,14 @@ sub onCycleIntervalChanged()
 end sub
 
 ' -- Key handling --
+' Roku LayoutGroups do NOT handle focus navigation automatically.
+' We must manually route directional keys between focusable controls.
+' RadioButtonList consumes up/down internally; if those keys reach us
+' here, it means the list is at a boundary and we should move on.
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
     if key = "back"
-        ' Save all current settings to registry on exit
         sec = CreateObject("roRegistrySection", "settings")
         sec.Write("serverUrl", m.SERVER_URL)
         sec.Write("username", m.USERNAME)
@@ -342,27 +348,53 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    rows = m.focusGrid.count()
-    newRow = m.focusRow
-    newCol = m.focusCol
+    ' Left column: buttons
+    buttons = [m.editUrlBtn, m.editUserBtn, m.editPassBtn]
+    ' Right column: radio lists
+    lists = [m.modeList, m.photoIntervalList, m.cycleIntervalList]
 
-    if key = "down"
-        newRow = (m.focusRow + 1) mod rows
-    else if key = "up"
-        newRow = (m.focusRow - 1 + rows) mod rows
-    else if key = "right" and m.focusCol = 0
-        newCol = 1
-    else if key = "left" and m.focusCol = 1
-        newCol = 0
-    else
-        return false
-    end if
+    ' Which button has focus? (-1 if none)
+    btnIdx = -1
+    for i = 0 to buttons.count() - 1
+        if buttons[i].hasFocus() then btnIdx = i
+    end for
 
-    if newRow <> m.focusRow or newCol <> m.focusCol
-        m.focusRow = newRow
-        m.focusCol = newCol
-        m.focusGrid[newRow][newCol].setFocus(true)
-        return true
+    ' Which list has focus? (-1 if none)
+    listIdx = -1
+    for i = 0 to lists.count() - 1
+        if lists[i].hasFocus() or lists[i].isInFocusChain() then listIdx = i
+    end for
+    ' Disambiguate: if a button also matched via focus chain, prefer button
+    if btnIdx >= 0 then listIdx = -1
+
+    n = buttons.count()
+
+    if btnIdx >= 0
+        ' Focus is on a button in the left column
+        if key = "down"
+            buttons[(btnIdx + 1) mod n].setFocus(true)
+            return true
+        else if key = "up"
+            buttons[(btnIdx - 1 + n) mod n].setFocus(true)
+            return true
+        else if key = "right"
+            lists[btnIdx].setFocus(true)
+            return true
+        end if
+    else if listIdx >= 0
+        ' Focus is on a RadioButtonList in the right column
+        if key = "left"
+            buttons[listIdx].setFocus(true)
+            return true
+        else if key = "down"
+            ' At bottom boundary — move to next list
+            lists[(listIdx + 1) mod n].setFocus(true)
+            return true
+        else if key = "up"
+            ' At top boundary — move to prev list
+            lists[(listIdx - 1 + n) mod n].setFocus(true)
+            return true
+        end if
     end if
 
     return false
