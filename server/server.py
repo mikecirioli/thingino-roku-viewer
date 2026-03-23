@@ -280,32 +280,35 @@ class TimelapseCapturer:
 
 # ── Photo cache ──────────────────────────────────────────
 _photo_cache = []
-_cache_mtime = 0
+_cache_time = 0
+_shuffled_photos = []
+_photo_index = 0
 
 
 def get_photos():
-    """Return list of photo paths, refreshing if directory has changed."""
-    global _photo_cache, _cache_mtime
-    try:
-        stat = os.stat(PHOTO_DIR)
-        if stat.st_mtime != _cache_mtime or not _photo_cache:
-            _cache_mtime = stat.st_mtime
-            _photo_cache = [
-                os.path.join(PHOTO_DIR, f)
-                for f in os.listdir(PHOTO_DIR)
-                if os.path.splitext(f)[1].lower() in EXTS
-            ]
-    except OSError:
-        pass
+    """Return list of photo paths, scanning subdirectories and caching for 5 minutes."""
+    global _photo_cache, _cache_time
+    if time.time() - _cache_time > 300 or not _photo_cache:
+        try:
+            new_cache = []
+            for root, _, files in os.walk(PHOTO_DIR):
+                for f in files:
+                    if os.path.splitext(f)[1].lower() in EXTS:
+                        new_cache.append(os.path.join(root, f))
+            _photo_cache = new_cache
+            _cache_time = time.time()
+        except OSError:
+            pass
     return _photo_cache
 
 
-def resize_image(path, max_w, max_h):
+def resize_image(path, max_w, max_h, disable_exif=False):
     """Resize image to fit within max_w x max_h. Returns (bytes, content_type)."""
     try:
         from PIL import Image, ImageOps
         with Image.open(path) as img:
-            img = ImageOps.exif_transpose(img)
+            if not disable_exif:
+                img = ImageOps.exif_transpose(img)
             img.thumbnail((max_w, max_h), Image.LANCZOS)
             buf = BytesIO()
             fmt = "JPEG" if path.lower().endswith((".jpg", ".jpeg")) else "PNG"
@@ -1613,16 +1616,30 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.wfile.write(html.encode())
 
     def serve_random(self, parsed):
+        global _shuffled_photos, _photo_index
         photos = get_photos()
         if not photos:
             self.send_error(503, "No photos found in {}".format(PHOTO_DIR))
             return
-        path = random.choice(photos)
+            
+        if not _shuffled_photos or len(_shuffled_photos) != len(photos):
+            _shuffled_photos = list(photos)
+            random.shuffle(_shuffled_photos)
+            _photo_index = 0
+            
+        if _photo_index >= len(_shuffled_photos):
+            random.shuffle(_shuffled_photos)
+            _photo_index = 0
+            
+        path = _shuffled_photos[_photo_index]
+        _photo_index += 1
         params = parse_qs(parsed.query)
         if "w" in params or "h" in params:
             max_w = int(params.get("w", [1280])[0])
             max_h = int(params.get("h", [800])[0])
-            data, ct = resize_image(path, max_w, max_h)
+            # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
+            disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
+            data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif)
             if data:
                 self.send_response(200)
                 self.send_header("Content-Type", ct)
