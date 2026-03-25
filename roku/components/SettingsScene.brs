@@ -2,12 +2,10 @@
 ' https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 sub init()
-    m.DEFAULT_SERVER_URL = ""
-    m.DEFAULT_USERNAME = ""
-    m.DEFAULT_PASSWORD = ""
-
     m.urlLabel = m.top.findNode("urlLabel")
     m.editUrlBtn = m.top.findNode("editUrlBtn")
+    m.loginBtn = m.top.findNode("loginBtn")
+    m.loginStatus = m.top.findNode("loginStatus")
     m.modeList = m.top.findNode("modeList")
     m.loading = m.top.findNode("loading")
     m.photoIntervalList = m.top.findNode("photoIntervalList")
@@ -23,13 +21,12 @@ sub init()
     sec = CreateObject("roRegistrySection", "settings")
 
     m.SERVER_URL = sec.Read("serverUrl")
-    if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
+    if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = ""
     m.urlLabel.text = m.SERVER_URL
 
-    m.USERNAME = sec.Read("username")
-    if m.USERNAME = invalid or m.USERNAME = "" then m.USERNAME = m.DEFAULT_USERNAME
-    m.PASSWORD = sec.Read("password")
-    if m.PASSWORD = invalid or m.PASSWORD = "" then m.PASSWORD = m.DEFAULT_PASSWORD
+    m.sessionCookie = sec.Read("sessionCookie")
+    if m.sessionCookie = invalid then m.sessionCookie = ""
+    updateLoginStatus()
 
     m.savedMode = sec.Read("mode")
     if m.savedMode <> "camera" and m.savedMode <> "video" then m.savedMode = "photo"
@@ -68,6 +65,7 @@ sub init()
     end if
 
     m.editUrlBtn.observeField("buttonSelected", "onEditUrl")
+    m.loginBtn.observeField("buttonSelected", "onLogin")
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
@@ -130,6 +128,65 @@ sub clearCameraOptions()
     m.cameraInfoMap = {}
 end sub
 
+' -- Authentication --
+
+sub onLogin()
+    ' Show a dialog to get username/password
+    dialog = CreateObject("roSGNode", "UsernamePasswordDialog")
+    dialog.title = "Log In to Server"
+    dialog.buttons = ["Login", "Cancel"]
+    dialog.observeField("buttonSelected", "onLoginDialogButton")
+    m.top.dialog = dialog
+end sub
+
+sub onLoginDialogButton(event as object)
+    idx = event.getData()
+    dialog = m.top.dialog
+    if idx = 0 ' Login button pressed
+        user = dialog.username
+        pass = dialog.password
+        if user <> "" and pass <> ""
+            m.loading.visible = true
+            m.loading.text = "Authenticating..."
+            authenticate(user, pass)
+        end if
+    end if
+    m.top.dialog = invalid
+end sub
+
+sub authenticate(user as string, pass as string)
+    url = m.SERVER_URL + "/api/login"
+    
+    ' Correctly format the JSON string for BrightScript
+    jsonObj = { username: user, password: pass }
+    body = FormatJSON(jsonObj)
+
+    task = CreateObject("roSGNode", "HttpTask")
+    task.observeField("response", "onAuthResponse")
+    task.request = { url: url, method: "POST", body: body }
+    task.control = "run"
+end sub
+
+sub onAuthResponse(event as object)
+    m.loading.visible = false
+    text = event.getData()
+    if text <> invalid and text <> ""
+        json = ParseJSON(text)
+        if json <> invalid and json.success = true and json.cookie <> invalid
+            m.sessionCookie = json.cookie
+            sec = CreateObject("roRegistrySection", "settings")
+            sec.Write("sessionCookie", m.sessionCookie)
+            sec.Flush()
+            updateLoginStatus()
+            ' Refresh camera list now that we're logged in
+            fetchCameraList()
+            return
+        end if
+    end if
+    m.loginStatus.text = "Login Failed"
+    m.loginStatus.color = "#FF6B6B" ' Red
+end sub
+
 ' -- Camera list --
 
 sub fetchCameraList()
@@ -137,7 +194,7 @@ sub fetchCameraList()
     url = m.SERVER_URL + "/camera/list?t=" + ts.asSeconds().toStr()
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraListResponse")
-    task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url, cookie: m.sessionCookie }
     task.control = "run"
     m.cameraListTask = task
 end sub
@@ -200,7 +257,7 @@ sub fetchCameraInfo(name as string)
     url = m.SERVER_URL + "/camera/" + name + "/info?t=" + ts.asSeconds().toStr()
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraInfoResponse")
-    task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url, cookie: m.sessionCookie }
     task.control = "run"
 end sub
 
@@ -277,13 +334,21 @@ sub onCycleIntervalChanged()
     sec.Flush()
 end sub
 
+sub updateLoginStatus()
+    if m.sessionCookie <> ""
+        m.loginStatus.text = "Logged In"
+        m.loginStatus.color = "#4CAF50" ' Green
+    else
+        m.loginStatus.text = "Not Logged In"
+        m.loginStatus.color = "#FFAA00" ' Orange
+    end if
+end sub
+
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    ' Manual focus navigation — LayoutGroup does NOT do this automatically.
-    ' RadioButtonList consumes up/down internally; if those keys reach us,
-    ' the list is at a boundary and we should move to the next control.
-    controls = [m.editUrlBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList]
+    ' Manual focus navigation
+    controls = [m.editUrlBtn, m.loginBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList]
     n = controls.count()
 
     idx = -1

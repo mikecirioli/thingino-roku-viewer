@@ -2,6 +2,9 @@
 # Quick deploy script for Roku debugging
 # Usage: ./deploy.sh <ROKU_IP> [PASSWORD]
 
+# Change to the script's directory to ensure correct zip paths
+cd "$(dirname "$0")" || exit
+
 if [ -z "$1" ]; then
   echo "Usage: ./deploy.sh <ROKU_IP> [PASSWORD]"
   exit 1
@@ -18,7 +21,8 @@ ZIP_FILE="/tmp/3-bad-dogs-dev.zip"
 
 echo "1. Zipping the app..."
 rm -f $ZIP_FILE
-zip -r $ZIP_FILE . -x "*.git*" "*deploy.sh*" "*.pkg*"
+# Zip from the current directory (which is now the 'roku' directory)
+zip -r $ZIP_FILE . -x "*.git*" "*deploy.sh*" "*.pkg*" "dist/*"
 
 echo "2. Deploying to Roku ($ROKU_IP)..."
 RESPONSE=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" --anyauth -u "rokudev:$DEV_PASSWORD" \
@@ -29,12 +33,15 @@ RESPONSE=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" --anyauth -u "rokudev:$DEV_P
 HTTP_STATUS=$(echo "$RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
 BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS\:.*//g')
 
+rm -f $ZIP_FILE
+
 if [ "$HTTP_STATUS" -eq 200 ]; then
   if echo "$BODY" | grep -q "Install Success"; then
     echo "Install Success"
   else
     echo "Install Failed. Raw output:"
-    echo "$BODY" | grep -v 'div class' | grep -v 'style' | grep -i 'error\|compilation\|failure\|message' || echo "$BODY"
+    # Try to extract just the error message from the HTML
+    echo "$BODY" | sed -n 's/.*<font color="#ff0000">\(.*\)<\/font>.*/\1/p' | sed 's/<br>/\n/g'
     exit 1
   fi
 else

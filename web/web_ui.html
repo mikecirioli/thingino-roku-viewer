@@ -28,7 +28,7 @@
         }
 
         /* Normal Mode Layout */
-        #normal-mode { display: flex; width: 100%; height: 100%; }
+        #normal-mode { display: flex; width: 100%; height: 100vh; overflow: hidden; }
         #sidebar {
             width: 250px;
             background-color: var(--sidebar-bg);
@@ -70,11 +70,11 @@
         .tab-btn:hover { color: white; background: rgba(255,255,255,0.08); }
         .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: bold; }
 
-        #right-panel { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+        #right-panel { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 
         /* Live View */
         #live-view {
-            flex-grow: 1; display: flex; justify-content: center; align-items: center;
+            flex: 1 1 0; min-height: 0; display: flex; justify-content: center; align-items: center;
             background-color: #000; position: relative;
         }
         #video-player { width: 100%; height: 100%; display: none; object-fit: contain; }
@@ -101,7 +101,7 @@
 
         /* Timelapse View */
         #timelapse-view {
-            flex-grow: 1; overflow-y: auto; overflow-x: hidden; padding: 20px; display: none; min-width: 0;
+            flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 20px; display: none; min-width: 0;
         }
         .tl-section {
             background: var(--sidebar-bg); padding: 20px; border-radius: 8px; margin-bottom: 20px;
@@ -176,6 +176,25 @@
         .btn-download:hover { border-color: #888; }
         #tl-video-player { width: 100%; display: none; margin-bottom: 15px; border-radius: 6px; background: #000; }
 
+        /* Library */
+        .lib-card {
+            background: var(--sidebar-bg); border-radius: 8px; overflow: hidden;
+            border: 1px solid var(--border-color); transition: border-color 0.2s;
+        }
+        .lib-card:hover { border-color: var(--accent-color); }
+        .lib-card img {
+            width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
+            background: #111; cursor: pointer;
+        }
+        .lib-card-info {
+            padding: 8px 10px; font-size: 0.75em; color: rgba(255,255,255,0.7);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .lib-card-actions { display: flex; gap: 4px; padding: 0 8px 8px; }
+        .lib-card-actions .btn { flex: 1; padding: 6px; font-size: 0.8em; }
+        .lib-btn-rotate { background: var(--button-bg); }
+        .lib-btn-delete { background: #d32f2f; }
+
         /* Screensaver Mode */
         #screensaver-mode {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -226,6 +245,7 @@
             <div id="tab-bar">
                 <button class="tab-btn active" data-tab="live">Live View</button>
                 <button class="tab-btn" data-tab="timelapse">Time-lapse</button>
+                <button class="tab-btn" data-tab="library">Library</button>
                 <button class="tab-btn" data-tab="config">Configuration</button>
             </div>
             <div id="live-view">
@@ -299,7 +319,26 @@
                 </div>
             </div>
 
-            <div id="config-view" style="display: none; flex-direction: column; padding: 20px; overflow-y: auto;">
+            <div id="library-view" style="display: none; padding: 20px; overflow-y: auto; flex: 1 1 0; min-height: 0;">
+                <div class="tl-section">
+                    <h2>Photo Library</h2>
+                    <div id="lib-status" style="color: var(--accent-color); margin-bottom: 15px;"></div>
+                    <div id="lib-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;"></div>
+                </div>
+            </div>
+
+            <div id="lib-confirm-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 200; justify-content: center; align-items: center;">
+                <div class="modal-content" style="text-align: center;">
+                    <h2 style="color: #ff6b6b;">Delete Photo?</h2>
+                    <p id="lib-confirm-file" style="color: var(--accent-color); word-break: break-all; margin: 15px 0;"></p>
+                    <div class="modal-actions" style="justify-content: center;">
+                        <button class="btn" id="lib-confirm-yes" style="background-color: #d32f2f;">Delete</button>
+                        <button class="btn" id="lib-confirm-no" style="background-color: #555;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="config-view" style="display: none; flex-direction: column; padding: 20px; overflow-y: auto; flex: 1 1 0; min-height: 0;">
                 <div class="tl-section">
                     <h2>Camera Configuration</h2>
                     <div style="margin-bottom: 20px;">
@@ -481,6 +520,12 @@
             tlCaptureEnabled: document.getElementById('tl-capture-enabled'),
             tlCaptureInterval: document.getElementById('tl-capture-interval'),
             tlCaptureStatus: document.getElementById('tl-capture-status'),
+            // Library
+            libraryView: document.getElementById('library-view'),
+            libGrid: document.getElementById('lib-grid'),
+            libStatus: document.getElementById('lib-status'),
+            libConfirmModal: document.getElementById('lib-confirm-modal'),
+            libConfirmFile: document.getElementById('lib-confirm-file'),
             // Config
             configView: document.getElementById('config-view'),
             configCameraList: document.getElementById('config-camera-list'),
@@ -517,7 +562,8 @@
             
             els.liveView.style.display = tab === 'live' ? 'flex' : 'none';
             els.timelapseView.style.display = tab === 'timelapse' ? 'block' : 'none';
-            els.configView.style.display = tab === 'config' ? 'flex' : 'none';
+            els.libraryView.style.display = tab === 'library' ? 'block' : 'none';
+            els.configView.style.display = tab === 'config' ? 'block' : 'none';
 
             renderSidebar();
             cleanupPlayer();
@@ -527,6 +573,8 @@
             } else if (tab === 'timelapse') {
                 if (state.activeCam) selectCamera(state.activeCam, 'timelapse');
                 else if (state.camNames.length) selectCamera(state.camNames[0], 'timelapse');
+            } else if (tab === 'library') {
+                loadLibrary();
             } else if (tab === 'config') {
                 loadCameraConfig();
             }
@@ -1058,6 +1106,100 @@
             els.tlVideoPlayer.style.display = 'block';
             els.tlVideoPlayer.play();
         });
+
+        // --- Library ---
+        let _libDeleteTarget = null;
+
+        async function loadLibrary() {
+            els.libStatus.textContent = 'Loading library...';
+            els.libGrid.innerHTML = '';
+            try {
+                const res = await fetch('/library', {credentials: 'same-origin'});
+                if (!res.ok) throw new Error(res.status);
+                const items = await res.json();
+                const withThumbs = items.filter(i => i.thumb);
+                const pending = items.length - withThumbs.length;
+                els.libStatus.textContent = `${items.length} photos` + (pending > 0 ? ` (${pending} thumbnails generating...)` : '');
+
+                withThumbs.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'lib-card';
+                    card.innerHTML = `
+                        <img src="${item.thumb}" loading="lazy" alt="${item.file}" title="${item.file}">
+                        <div class="lib-card-info">${item.file}</div>
+                        <div class="lib-card-actions">
+                            <button class="btn lib-btn-rotate" data-file="${item.file}">Rotate 90°</button>
+                            <button class="btn lib-btn-delete" data-file="${item.file}">Delete</button>
+                        </div>`;
+                    els.libGrid.appendChild(card);
+                });
+            } catch (err) {
+                els.libStatus.textContent = 'Failed to load library: ' + err.message;
+            }
+        }
+
+        els.libGrid.addEventListener('click', async e => {
+            const rotateBtn = e.target.closest('.lib-btn-rotate');
+            const deleteBtn = e.target.closest('.lib-btn-delete');
+
+            if (rotateBtn) {
+                const file = rotateBtn.dataset.file;
+                rotateBtn.textContent = 'Rotating...';
+                rotateBtn.disabled = true;
+                try {
+                    const res = await fetch('/library/rotate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({file})
+                    });
+                    if (res.ok) {
+                        // Refresh the thumbnail
+                        const img = rotateBtn.closest('.lib-card').querySelector('img');
+                        img.src = img.src.split('&_r=')[0] + '&_r=' + Date.now();
+                    } else {
+                        alert('Rotate failed: ' + await res.text());
+                    }
+                } catch (err) {
+                    alert('Rotate failed: ' + err.message);
+                }
+                rotateBtn.textContent = 'Rotate 90°';
+                rotateBtn.disabled = false;
+            }
+
+            if (deleteBtn) {
+                _libDeleteTarget = deleteBtn.dataset.file;
+                els.libConfirmFile.textContent = _libDeleteTarget;
+                els.libConfirmModal.style.display = 'flex';
+            }
+        });
+
+        document.getElementById('lib-confirm-no').onclick = () => {
+            _libDeleteTarget = null;
+            els.libConfirmModal.style.display = 'none';
+        };
+
+        document.getElementById('lib-confirm-yes').onclick = async () => {
+            if (!_libDeleteTarget) return;
+            const file = _libDeleteTarget;
+            els.libConfirmModal.style.display = 'none';
+            try {
+                const res = await fetch('/library/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({file})
+                });
+                if (res.ok) {
+                    // Remove the card from the grid
+                    const card = els.libGrid.querySelector(`.lib-btn-delete[data-file="${CSS.escape(file)}"]`)?.closest('.lib-card');
+                    if (card) card.remove();
+                } else {
+                    alert('Delete failed: ' + await res.text());
+                }
+            } catch (err) {
+                alert('Delete failed: ' + err.message);
+            }
+            _libDeleteTarget = null;
+        };
 
         // --- Screensaver ---
         document.getElementById('btn-screensaver').onclick = startScreensaver;

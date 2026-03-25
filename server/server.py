@@ -93,6 +93,9 @@ CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", "30"))
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TIMELAPSE_STORAGE_PATH = os.environ.get("TIMELAPSE_STORAGE_PATH", "/data/timelapse")
+THUMBNAIL_DIR = os.environ.get("THUMBNAIL_DIR", "/data/thumbnails")
+THUMBNAIL_SIZE = 180
+THUMBNAIL_SCAN_INTERVAL = 60
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
 # ── Timelapse Capturer ──────────────────────────────────
@@ -278,6 +281,86 @@ class TimelapseCapturer:
             print(f"WARNING: ffmpeg capture failed for '{stream_url}': {e}")
         return None
 
+# ── Thumbnail Generator ───────────────────────────────────
+
+class ThumbnailGenerator:
+    """Background task that generates orientation-corrected thumbnails for the photo library."""
+
+    def __init__(self):
+        self._thread = None
+
+    def start(self):
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        print(f"  thumbnails: generator started, output to {THUMBNAIL_DIR}")
+
+    def _run(self):
+        while True:
+            try:
+                self._scan()
+            except Exception as e:
+                print(f"WARNING: thumbnail scan failed: {e}")
+            time.sleep(THUMBNAIL_SCAN_INTERVAL)
+
+    def _scan(self):
+        from PIL import Image, ImageOps
+        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+
+        photos = get_photos()
+        generated = 0
+        for photo_path in photos:
+            thumb_name = self._thumb_name(photo_path)
+            thumb_path = os.path.join(THUMBNAIL_DIR, thumb_name)
+            if os.path.exists(thumb_path):
+                continue
+            try:
+                with Image.open(photo_path) as img:
+                    img = ImageOps.exif_transpose(img)
+                    img.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+                    img.save(thumb_path, "JPEG", quality=50)
+                generated += 1
+            except Exception as e:
+                print(f"WARNING: thumbnail failed for {photo_path}: {e}")
+
+        # Clean up thumbnails for deleted photos
+        photo_set = {self._thumb_name(p) for p in photos}
+        try:
+            for f in os.listdir(THUMBNAIL_DIR):
+                if f.endswith(".jpg") and f not in photo_set:
+                    os.remove(os.path.join(THUMBNAIL_DIR, f))
+        except Exception:
+            pass
+
+        if generated:
+            print(f"  thumbnails: generated {generated} new thumbnails")
+
+    @staticmethod
+    def _thumb_name(photo_path):
+        """Deterministic thumbnail filename from original path."""
+        import hashlib
+        h = hashlib.md5(photo_path.encode()).hexdigest()
+        return h + ".jpg"
+
+    @staticmethod
+    def thumb_path_for(photo_path):
+        """Return the thumbnail path for a given photo."""
+        import hashlib
+        h = hashlib.md5(photo_path.encode()).hexdigest()
+        return os.path.join(THUMBNAIL_DIR, h + ".jpg")
+
+
+def _find_photo_by_relative(rel_path):
+    """Find a photo by its path relative to PHOTO_DIR."""
+    full = os.path.normpath(os.path.join(PHOTO_DIR, rel_path))
+    if not full.startswith(os.path.normpath(PHOTO_DIR)):
+        return None  # path traversal
+    if os.path.isfile(full):
+        return full
+    return None
+
+
 # ── Photo cache ──────────────────────────────────────────
 _photo_cache = []
 _cache_time = 0
@@ -324,11 +407,11 @@ def resize_image(path, max_w, max_h, disable_exif=False):
 # Loaded from YAML file or legacy CAMERAS env var (JSON).
 
 _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, password}}
-
+_WEB_AUTH = None # {username, password}
 
 def _load_cameras():
     """Load camera config from YAML file or CAMERAS env var."""
-    global _CAMERAS
+    global _CAMERAS, _WEB_AUTH
 
     # Try YAML file first
     if os.path.isfile(CAMERAS_FILE):
@@ -339,6 +422,10 @@ def _load_cameras():
             if cfg and "cameras" in cfg:
                 _CAMERAS = cfg["cameras"]
                 print(f"  cameras: loaded {len(_CAMERAS)} from {CAMERAS_FILE}")
+            if cfg and "web_auth" in cfg:
+                _WEB_AUTH = cfg["web_auth"]
+                print(f"  web auth configured from {CAMERAS_FILE}")
+            if cfg and "cameras" in cfg:
                 return
         except ImportError:
             print("WARNING: PyYAML not installed, cannot read cameras.yaml")
@@ -522,19 +609,47 @@ class CameraStream:
         return None
 
     def _fetch_basic_auth(self, url, auth):
-        """Fetch with HTTP basic auth."""
-        import base64
-        creds = base64.b64encode("{}:{}".format(
-            auth.get("username", ""), auth.get("password", "")
-        ).encode()).decode()
-        req = Request(url)
-        req.add_header("Authorization", "Basic " + creds)
+        """Fetch with HTTP basic or digest auth."""
         try:
-            resp = urlopen(req, timeout=5)
-            if resp.status == 200:
-                return resp.read()
-        except Exception:
-            pass
+            import requests
+            from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+            
+            user = auth.get("username", "")
+            pw = auth.get("password", "")
+            
+            try:
+                # Try basic auth first
+                resp = requests.get(url, auth=HTTPBasicAuth(user, pw), timeout=10)
+                if resp.status_code == 401:
+                    # Fallback to Digest
+                    resp = requests.get(url, auth=HTTPDigestAuth(user, pw), timeout=10)
+                if resp.status_code == 200:
+                    return resp.content
+            except Exception as e:
+                print(f"requests error fetching auth URL {url}: {e}")
+                return None
+        except ImportError:
+            # Fallback to urllib if requests isn't installed
+            try:
+                try:
+                    from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, HTTPDigestAuthHandler, build_opener
+                except ImportError:
+                    from urllib2 import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, HTTPDigestAuthHandler, build_opener
+
+                passman = HTTPPasswordMgrWithDefaultRealm()
+                passman.add_password(None, url, auth.get("username", ""), auth.get("password", ""))
+                
+                auth_basic = HTTPBasicAuthHandler(passman)
+                auth_digest = HTTPDigestAuthHandler(passman)
+                opener = build_opener(auth_basic, auth_digest)
+                
+                resp = opener.open(url, timeout=15)
+                if resp.getcode() == 200:
+                    return resp.read()
+            except Exception as e:
+                import traceback
+                print(f"urllib error fetching auth URL {url}: {e}")
+                traceback.print_exc()
         return None
 
     def _fetch_url(self, url):
@@ -1028,6 +1143,20 @@ class PhotoHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
+        # The /login endpoint is the only one that can be accessed without prior auth.
+        if path == "/login":
+            self.handle_login()
+            return
+        if path == "/api/login":
+            self.handle_api_login()
+            return
+        
+        # For all other POST endpoints, require authorization.
+        if not self._is_request_authorized():
+            self.send_error(401, "Authentication Required")
+            return
+
+        # --- Authorized POST requests ---
         if path.endswith("/ptz") and path.startswith("/camera/"):
             self.handle_ptz(path)
         elif path == "/timelapse/generate":
@@ -1036,8 +1165,58 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_timelapse_config_post()
         elif path == "/camera/config":
             self.handle_camera_config_post()
+        elif path == "/library/rotate":
+            self.handle_library_rotate()
+        elif path == "/library/delete":
+            self.handle_library_delete()
         else:
             self.send_error(404)
+
+    def handle_api_login(self):
+        """POST /api/login — for non-web clients like Roku."""
+        content_len = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_len)
+        try:
+            data = json.loads(body)
+            user = data.get('username', '')
+            pwd = data.get('password', '')
+
+            if _WEB_AUTH and user == _WEB_AUTH.get('username') and pwd == _WEB_AUTH.get('password'):
+                import hashlib
+                session_val = hashlib.sha256(f"{user}:{pwd}".encode()).hexdigest()
+                cookie = f'session={session_val}; Path=/; HttpOnly'
+                
+                resp = json.dumps({'success': True, 'cookie': cookie}).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                # Also set the cookie in the header for convenience
+                self.send_header('Set-Cookie', cookie)
+                self.send_header('Content-Length', str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+            else:
+                self.send_error(401, "Invalid credentials")
+
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+
+    def handle_login(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode('utf-8')
+        from urllib.parse import parse_qs
+        post_data = parse_qs(body)
+        user = post_data.get('username', [''])[0]
+        pwd = post_data.get('password', [''])[0]
+        
+        if _WEB_AUTH and user == _WEB_AUTH.get('username') and pwd == _WEB_AUTH.get('password'):
+            import hashlib
+            session = hashlib.sha256(f"{user}:{pwd}".encode()).hexdigest()
+            self.send_response(302)
+            self.send_header('Set-Cookie', f'session={session}; Path=/; HttpOnly')
+            self.send_header('Location', '/web')
+            self.end_headers()
+        else:
+            self.serve_login_page(error=True)
 
     def handle_camera_config_post(self):
         """POST /camera/config — update global camera configuration."""
@@ -1201,10 +1380,90 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _is_request_authorized(self):
+        """Check for session cookie or local IP address."""
+        # If no auth is configured in yaml, allow all requests.
+        if not _WEB_AUTH:
+            return True
+
+        # 1. Check for a valid session cookie
+        cookie_header = self.headers.get('Cookie')
+        if cookie_header:
+            from http.cookies import SimpleCookie
+            cookie = SimpleCookie()
+            cookie.load(cookie_header)
+            if 'session' in cookie:
+                import hashlib
+                expected = hashlib.sha256(f"{_WEB_AUTH.get('username')}:{_WEB_AUTH.get('password')}".encode()).hexdigest()
+                if cookie['session'].value == expected:
+                    return True
+
+        # 2. If no cookie, check if the request is from a local IP
+        client_ip_str = self.headers.get('X-Forwarded-For', self.client_address[0]).split(',')[0].strip()
+        if client_ip_str:
+            try:
+                from ipaddress import ip_address
+                # Allow requests from any private (LAN) IP address.
+                if ip_address(client_ip_str).is_private:
+                    return True
+            except (ValueError, ImportError):
+                # Failed to parse IP, proceed to deny access
+                pass
+        
+        return False
+
+    def serve_login_page(self, error=False):
+        html = """<!DOCTYPE html>
+<html><head><title>Login</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { font-family: sans-serif; background: #222; color: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+.box { background: #333; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; }
+input { display: block; width: 100%; margin: 10px 0; padding: 10px; box-sizing: border-box; background: #444; color: white; border: 1px solid #555; border-radius: 4px; }
+button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px; }
+button:hover { background: #0056b3; }
+.error { color: #ff6b6b; margin-bottom: 10px; }
+</style></head><body>
+<div class="box">
+  <h2>Login</h2>
+  """ + ('<div class="error">Invalid credentials</div>' if error else '') + """
+  <form method="POST" action="/login">
+    <input type="text" name="username" placeholder="Username" required autofocus>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+  </form>
+</div>
+</body></html>"""
+        data = html.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
+        # Define which paths require authentication
+        protected_prefixes = ('/web', '/random', '/camera/', '/timelapse/', '/ha/', '/library')
+        is_protected = path.startswith(protected_prefixes)
+        
+        # Exception: /web/ is protected, but assets inside /web/ (like logo.png) are not,
+        # otherwise the login page itself wouldn't load correctly if it had external assets.
+        if path.startswith('/web/'):
+            is_protected = False
+
+        # Main auth check
+        if is_protected and not self._is_request_authorized():
+            if path == '/web':
+                # User is trying to access the main UI, show the login page.
+                self.serve_login_page()
+            else:
+                # Unauthorized access to an API endpoint.
+                self.send_error(401, "Authentication Required")
+            return
+
+        # --- Authorized or public paths ---
         if path == "" or path == "/index.html":
             self.serve_html()
         elif path == "/web":
@@ -1215,6 +1474,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_camera_list()
         elif path == "/camera/all_info":
             self.serve_all_camera_info()
+        elif path == "/camera/config":
+            self.serve_camera_config()
         elif path.endswith("/info") and path.startswith("/camera/"):
             self.serve_camera_info(path)
         elif path.startswith("/camera/"):
@@ -1225,8 +1486,6 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_ha(path)
         elif path == "/timelapse/config":
             self.serve_timelapse_config()
-        elif path == "/camera/config":
-            self.serve_camera_config()
         elif path == "/timelapse/summary":
             self.serve_timelapse_summary()
         elif path == "/timelapse/videos":
@@ -1237,6 +1496,10 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_timelapse_frames()
         elif path == "/timelapse/frame":
             self.serve_timelapse_frame()
+        elif path == "/library":
+            self.serve_library_list()
+        elif path == "/library/thumb":
+            self.serve_library_thumb(parsed)
         elif path.startswith("/web/"):
             self.serve_web_static(path)
         elif path == "/health":
@@ -1476,6 +1739,133 @@ class PhotoHandler(BaseHTTPRequestHandler):
             print(f"ERROR: failed to serve frame: {e}")
             self.send_error(500, "Failed to serve frame")
 
+    def serve_library_list(self):
+        """GET /library — return list of photos with relative paths and thumbnail URLs."""
+        photos = get_photos()
+        items = []
+        for p in sorted(photos):
+            rel = os.path.relpath(p, PHOTO_DIR)
+            thumb_name = ThumbnailGenerator._thumb_name(p)
+            has_thumb = os.path.exists(os.path.join(THUMBNAIL_DIR, thumb_name))
+            items.append({
+                "file": rel,
+                "thumb": f"/library/thumb?file={rel}" if has_thumb else None,
+            })
+        data = json.dumps(items).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_library_thumb(self, parsed):
+        """GET /library/thumb?file=<relative-path> — serve a thumbnail."""
+        params = parse_qs(parsed.query)
+        rel = params.get("file", [None])[0]
+        if not rel:
+            self.send_error(400, "Missing file parameter")
+            return
+        full = _find_photo_by_relative(rel)
+        if not full:
+            self.send_error(404, "Photo not found")
+            return
+        thumb_path = ThumbnailGenerator.thumb_path_for(full)
+        if not os.path.isfile(thumb_path):
+            self.send_error(404, "Thumbnail not yet generated")
+            return
+        try:
+            with open(thumb_path, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "max-age=300")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception:
+            self.send_error(500, "Failed to read thumbnail")
+
+    def handle_library_rotate(self):
+        """POST /library/rotate — rotate original image 90° CW, regenerate thumbnail."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        rel = data.get("file")
+        if not rel:
+            self.send_error(400, "Missing file field")
+            return
+        full = _find_photo_by_relative(rel)
+        if not full:
+            self.send_error(404, "Photo not found")
+            return
+        try:
+            from PIL import Image, ImageOps
+            with Image.open(full) as img:
+                img = ImageOps.exif_transpose(img)
+                img = img.rotate(-90, expand=True)
+                # Strip EXIF orientation since we've applied it
+                exif_data = img.info.get("exif")
+                if full.lower().endswith((".jpg", ".jpeg")):
+                    img.save(full, "JPEG", quality=95)
+                else:
+                    img.save(full)
+            # Regenerate thumbnail
+            thumb_path = ThumbnailGenerator.thumb_path_for(full)
+            with Image.open(full) as img:
+                img.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+                img.save(thumb_path, "JPEG", quality=50)
+            result = json.dumps({"ok": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(result)))
+            self.end_headers()
+            self.wfile.write(result)
+        except Exception as e:
+            print(f"ERROR: rotate failed for {full}: {e}")
+            self.send_error(500, f"Rotate failed: {e}")
+
+    def handle_library_delete(self):
+        """POST /library/delete — delete original photo and its thumbnail."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        rel = data.get("file")
+        if not rel:
+            self.send_error(400, "Missing file field")
+            return
+        full = _find_photo_by_relative(rel)
+        if not full:
+            self.send_error(404, "Photo not found")
+            return
+        try:
+            # Delete thumbnail
+            thumb_path = ThumbnailGenerator.thumb_path_for(full)
+            if os.path.exists(thumb_path):
+                os.remove(thumb_path)
+            # Delete original
+            os.remove(full)
+            # Invalidate photo cache
+            global _photo_cache, _cache_time
+            _cache_time = 0
+            result = json.dumps({"ok": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(result)))
+            self.end_headers()
+            self.wfile.write(result)
+        except Exception as e:
+            print(f"ERROR: delete failed for {full}: {e}")
+            self.send_error(500, f"Delete failed: {e}")
+
     def serve_ha(self, path):
         handlers = {
             "/ha/weather": ha_weather,
@@ -1704,6 +2094,10 @@ if __name__ == "__main__":
     global timelapse_capturer
     timelapse_capturer = TimelapseCapturer(_CAMERAS)
     timelapse_capturer.start()
+
+    # Start the thumbnail generator
+    thumb_gen = ThumbnailGenerator()
+    thumb_gen.start()
 
     try:
         server.serve_forever()
