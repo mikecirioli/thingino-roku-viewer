@@ -1412,6 +1412,29 @@ class PhotoHandler(BaseHTTPRequestHandler):
         
         return False
 
+    def serve_auth_verify(self):
+        """Lightweight endpoint for nginx auth_request subrequests.
+        Only checks session cookie — no IP bypass.  LAN bypass is
+        handled by _is_request_authorized() for direct (non-nginx) access."""
+        authorized = False
+        if not _WEB_AUTH:
+            authorized = True
+        else:
+            cookie_header = self.headers.get('Cookie')
+            if cookie_header:
+                from http.cookies import SimpleCookie
+                import hashlib
+                cookie = SimpleCookie()
+                cookie.load(cookie_header)
+                if 'session' in cookie:
+                    expected = hashlib.sha256(
+                        f"{_WEB_AUTH.get('username')}:{_WEB_AUTH.get('password')}".encode()
+                    ).hexdigest()
+                    if cookie['session'].value == expected:
+                        authorized = True
+        self.send_response(200 if authorized else 401)
+        self.end_headers()
+
     def serve_login_page(self, error=False):
         html = """<!DOCTYPE html>
 <html><head><title>Login</title><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1464,7 +1487,10 @@ button:hover { background: #0056b3; }
             return
 
         # --- Authorized or public paths ---
-        if path == "" or path == "/index.html":
+        if path == "/auth/verify":
+            self.serve_auth_verify()
+            return
+        elif path == "" or path == "/index.html":
             self.serve_html()
         elif path == "/web":
             self.serve_web_ui()
@@ -1502,6 +1528,8 @@ button:hover { background: #0056b3; }
             self.serve_library_thumb(parsed)
         elif path.startswith("/web/"):
             self.serve_web_static(path)
+        elif path == "/login":
+            self.serve_login_page()
         elif path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
