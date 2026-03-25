@@ -411,7 +411,7 @@ _WEB_AUTH = None # {username, password}
 
 def _load_cameras():
     """Load camera config from YAML file or CAMERAS env var."""
-    global _CAMERAS, _WEB_AUTH
+    global _CAMERAS, _WEB_AUTH, HA_URL, HA_TOKEN
 
     # Try YAML file first
     if os.path.isfile(CAMERAS_FILE):
@@ -425,6 +425,12 @@ def _load_cameras():
             if cfg and "web_auth" in cfg:
                 _WEB_AUTH = cfg["web_auth"]
                 print(f"  web auth configured from {CAMERAS_FILE}")
+            if cfg and "ha_url" in cfg and not HA_URL:
+                HA_URL = cfg["ha_url"].rstrip("/")
+                print(f"  ha_url configured from {CAMERAS_FILE}")
+            if cfg and "ha_token" in cfg and not HA_TOKEN:
+                HA_TOKEN = cfg["ha_token"]
+                print(f"  ha_token configured from {CAMERAS_FILE}")
             if cfg and "cameras" in cfg:
                 return
         except ImportError:
@@ -1414,12 +1420,13 @@ class PhotoHandler(BaseHTTPRequestHandler):
 
     def serve_auth_verify(self):
         """Lightweight endpoint for nginx auth_request subrequests.
-        Only checks session cookie — no IP bypass.  LAN bypass is
+        Checks session cookie or Basic auth — no IP bypass.  LAN bypass is
         handled by _is_request_authorized() for direct (non-nginx) access."""
         authorized = False
         if not _WEB_AUTH:
             authorized = True
         else:
+            # 1. Session cookie
             cookie_header = self.headers.get('Cookie')
             if cookie_header:
                 from http.cookies import SimpleCookie
@@ -1432,6 +1439,19 @@ class PhotoHandler(BaseHTTPRequestHandler):
                     ).hexdigest()
                     if cookie['session'].value == expected:
                         authorized = True
+
+            # 2. Basic auth (used by Roku screensaver)
+            if not authorized:
+                import base64
+                auth_header = self.headers.get('Authorization', '')
+                if auth_header.startswith('Basic '):
+                    try:
+                        decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
+                        user, pwd = decoded.split(':', 1)
+                        if user == _WEB_AUTH.get('username') and pwd == _WEB_AUTH.get('password'):
+                            authorized = True
+                    except Exception:
+                        pass
         self.send_response(200 if authorized else 401)
         self.end_headers()
 
