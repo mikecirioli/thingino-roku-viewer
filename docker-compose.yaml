@@ -12,6 +12,7 @@ services:
       - /export/homeassistant/photoframe-server/packages:/packages
       - /export/homeassistant/photoframe-server/logs:/logs
       - /export/homeassistant/photoframe-server/thumbnails:/data/thumbnails
+      - /export/homeassistant/photoframe-server/cache:/data/cache
     environment:
       - REFRESH=30
       - TITLE=

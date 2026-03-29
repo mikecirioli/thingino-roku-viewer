@@ -94,6 +94,7 @@ HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TIMELAPSE_STORAGE_PATH = os.environ.get("TIMELAPSE_STORAGE_PATH", "/data/timelapse")
 THUMBNAIL_DIR = os.environ.get("THUMBNAIL_DIR", "/data/thumbnails")
+CACHE_DIR = os.environ.get("CACHE_DIR", "/data/cache")
 THUMBNAIL_SIZE = 180
 THUMBNAIL_SCAN_INTERVAL = 60
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
@@ -388,6 +389,27 @@ def get_photos():
 def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_threshold=0.15):
     """Resize image with various fill modes (contain, cover, blur). Returns (bytes, content_type)."""
     try:
+        import hashlib
+        # 1. Check disk cache
+        # Cache key based on path + all resizing parameters
+        cache_key_raw = f"{path}_{max_w}_{max_h}_{disable_exif}_{fit}_{crop_threshold}"
+        cache_hash = hashlib.md5(cache_key_raw.encode()).hexdigest()
+        cache_ext = ".jpg" if path.lower().endswith((".jpg", ".jpeg")) else ".png"
+        cache_path = os.path.join(CACHE_DIR, cache_hash + cache_ext)
+        ct = "image/jpeg" if cache_ext == ".jpg" else "image/png"
+
+        try:
+            if os.path.exists(cache_path):
+                # Verify source hasn't changed
+                src_mtime = os.path.getmtime(path)
+                cache_mtime = os.path.getmtime(cache_path)
+                if cache_mtime > src_mtime:
+                    with open(cache_path, "rb") as f:
+                        return f.read(), ct
+        except Exception as e:
+            print(f"  cache: error reading {cache_path}: {e}")
+
+        # 2. Perform resize
         from PIL import Image, ImageOps, ImageFilter
         with Image.open(path) as img:
             if not disable_exif:
@@ -436,11 +458,23 @@ def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_thr
                 img.thumbnail((max_w, max_h), Image.LANCZOS)
             
             buf = BytesIO()
-            fmt = "JPEG" if path.lower().endswith((".jpg", ".jpeg")) else "PNG"
+            fmt = "JPEG" if cache_ext == ".jpg" else "PNG"
             img.save(buf, fmt, quality=85)
-            ct = "image/jpeg" if fmt == "JPEG" else "image/png"
-            return buf.getvalue(), ct
+            data = buf.getvalue()
+
+            # 3. Save to cache
+            try:
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                with open(cache_path, "wb") as f:
+                    f.write(data)
+            except Exception as e:
+                print(f"  cache: error saving {cache_path}: {e}")
+            
+            return data, ct
     except ImportError:
+        return None, None
+    except Exception as e:
+        print(f"  resize: error processing {path}: {e}")
         return None, None
 
 
