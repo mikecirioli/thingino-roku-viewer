@@ -385,7 +385,7 @@ def get_photos():
     return _photo_cache
 
 
-def resize_image(path, max_w, max_h, disable_exif=False, fit="contain"):
+def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_threshold=0.15):
     """Resize image with various fill modes (contain, cover, blur). Returns (bytes, content_type)."""
     try:
         from PIL import Image, ImageOps, ImageFilter
@@ -400,8 +400,8 @@ def resize_image(path, max_w, max_h, disable_exif=False, fit="contain"):
             src_ratio = src_w / src_h
             dst_ratio = dst_w / dst_h
             
-            # If aspect ratios are very close (within 15%), default fit to 'cover' for a better look
-            if fit == "contain" and abs(src_ratio - dst_ratio) / dst_ratio < 0.15:
+            # If aspect ratios are very close (within threshold), default fit to 'cover' for a better look
+            if fit == "contain" and abs(src_ratio - dst_ratio) / dst_ratio < crop_threshold:
                 fit = "cover"
 
             if fit == "cover":
@@ -727,7 +727,7 @@ _streams = {}
 _streams_lock = threading.Lock()
 
 
-def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contain"):
+def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contain", crop_threshold=0.15):
     """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
     cam = _CAMERAS.get(name)
     if not cam:
@@ -742,7 +742,7 @@ def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contai
     if raw is None:
         return None, None
     if (max_w and max_h) or not disable_exif:
-        return _resize_jpeg(raw, max_w, max_h, disable_exif=disable_exif, fit=fit)
+        return _resize_jpeg(raw, max_w, max_h, disable_exif=disable_exif, fit=fit, crop_threshold=crop_threshold)
     return raw, "image/jpeg"
 
 
@@ -763,7 +763,7 @@ def camera_info(name):
     }
 
 
-def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain"):
+def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain", crop_threshold=0.15):
     """Resize JPEG bytes. Returns (bytes, content_type)."""
     try:
         from PIL import Image, ImageOps, ImageFilter
@@ -778,7 +778,7 @@ def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain"):
             # Use smart scaling if ratios are close
             src_ratio = src_w / src_h
             dst_ratio = dst_w / dst_h
-            if fit == "contain" and abs(src_ratio - dst_ratio) / dst_ratio < 0.15:
+            if fit == "contain" and abs(src_ratio - dst_ratio) / dst_ratio < crop_threshold:
                 fit = "cover"
 
             if fit == "cover":
@@ -1997,10 +1997,22 @@ button:hover { background: #0056b3; }
             self.send_error(500, "Failed to serve frame")
 
     def serve_library_list(self):
-        """GET /library — return list of photos with relative paths and thumbnail URLs."""
+        """GET /library — return list of photos with relative paths and thumbnail URLs, sorted by date."""
         photos = get_photos()
+        # Pair each photo with its modification time
+        photo_info = []
+        for p in photos:
+            try:
+                mtime = os.path.getmtime(p)
+            except OSError:
+                mtime = 0
+            photo_info.append((p, mtime))
+        
+        # Sort by mtime descending (newest first)
+        photo_info.sort(key=lambda x: x[1], reverse=True)
+        
         items = []
-        for p in sorted(photos):
+        for p, _ in photo_info:
             rel = os.path.relpath(p, PHOTO_DIR)
             thumb_name = ThumbnailGenerator._thumb_name(p)
             has_thumb = os.path.exists(os.path.join(THUMBNAIL_DIR, thumb_name))
@@ -2185,7 +2197,12 @@ button:hover { background: #0056b3; }
         # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
         disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
         fit = params.get("fit", ["contain"])[0]
-        data, ct = camera_snapshot(name, max_w, max_h, disable_exif=disable_exif, fit=fit)
+        try:
+            crop_threshold = float(params.get("crop_threshold", [0.15])[0])
+        except (ValueError, IndexError):
+            crop_threshold = 0.15
+            
+        data, ct = camera_snapshot(name, max_w, max_h, disable_exif=disable_exif, fit=fit, crop_threshold=crop_threshold)
         if not data:
             self.send_error(502, "Failed to fetch snapshot for {}".format(name))
             return
@@ -2290,7 +2307,12 @@ button:hover { background: #0056b3; }
             # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
             disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
             fit = params.get("fit", ["contain"])[0]
-            data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif, fit=fit)
+            try:
+                crop_threshold = float(params.get("crop_threshold", [0.15])[0])
+            except (ValueError, IndexError):
+                crop_threshold = 0.15
+            
+            data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif, fit=fit, crop_threshold=crop_threshold)
             if data:
                 self.send_response(200)
                 self.send_header("Content-Type", ct)

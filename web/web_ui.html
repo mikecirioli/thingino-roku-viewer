@@ -409,6 +409,14 @@
                     </div>
 
                     <div class="form-group">
+                        <label>Smart Crop Threshold: <span id="config-threshold-val">15</span>%</label>
+                        <input type="range" id="config-global-threshold" min="0" max="50" step="1" value="15" style="padding: 0;">
+                        <p style="font-size: 0.75em; color: #9ab; margin-top: 5px;">
+                            If an image's aspect ratio is within this % of the screen, it will auto-crop to fill instead of showing bars.
+                        </p>
+                    </div>
+
+                    <div class="form-group">
                         <label>Additional URL Parameters</label>
                         <input type="text" id="config-global-params" placeholder="e.g. grayscale=1&brightness=1.2">
                         <p style="font-size: 0.75em; color: #9ab; margin-top: 5px;">
@@ -596,6 +604,8 @@
             configGlobalWidth: document.getElementById('config-global-width'),
             configGlobalHeight: document.getElementById('config-global-height'),
             configGlobalFit: document.getElementById('config-global-fit'),
+            configGlobalThreshold: document.getElementById('config-global-threshold'),
+            configGlobalThresholdVal: document.getElementById('config-threshold-val'),
             configGlobalParams: document.getElementById('config-global-params'),
             configGlobalStatus: document.getElementById('global-settings-status'),
             libUploadInput: document.getElementById('lib-upload-input'),
@@ -1476,10 +1486,14 @@
                     els.configGlobalHeight.value = _globalSettings.h || '';
                     els.configGlobalFit.value = _globalSettings.fit || 'contain';
                     
+                    const thresh = parseFloat(_globalSettings.crop_threshold || 0.15);
+                    els.configGlobalThreshold.value = Math.round(thresh * 100);
+                    els.configGlobalThresholdVal.textContent = Math.round(thresh * 100);
+                    
                     // Reconstruct extra params string from other keys
                     const extra = [];
                     for (const k in _globalSettings) {
-                        if (!['noexif', 'w', 'h', 'fit'].includes(k)) {
+                        if (!['noexif', 'w', 'h', 'fit', 'crop_threshold'].includes(k)) {
                             extra.push(`${k}=${_globalSettings[k]}`);
                         }
                     }
@@ -1496,6 +1510,10 @@
             els.configGlobalHeight.value = window.screen.height;
         };
 
+        els.configGlobalThreshold.oninput = () => {
+            els.configGlobalThresholdVal.textContent = els.configGlobalThreshold.value;
+        };
+
         document.getElementById('btn-save-global-settings').onclick = async () => {
             const btn = document.getElementById('btn-save-global-settings');
             btn.disabled = true;
@@ -1503,7 +1521,8 @@
 
             const settings = {
                 noexif: els.configGlobalRotate.checked ? 'false' : 'true',
-                fit: els.configGlobalFit.value
+                fit: els.configGlobalFit.value,
+                crop_threshold: (parseFloat(els.configGlobalThreshold.value) / 100).toFixed(2)
             };
             if (els.configGlobalWidth.value) settings.w = els.configGlobalWidth.value;
             if (els.configGlobalHeight.value) settings.h = els.configGlobalHeight.value;
