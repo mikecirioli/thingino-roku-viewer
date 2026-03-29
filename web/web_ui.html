@@ -1401,7 +1401,7 @@
             try {
                 const [camRes, settingsRes] = await Promise.all([
                     fetch('/camera/config'),
-                    fetch('/settings')
+                    fetch('/camera/settings')
                 ]);
                 
                 if (!camRes.ok) throw new Error(camRes.status);
@@ -1450,7 +1450,7 @@
             }
 
             try {
-                const res = await fetch('/settings', {
+                const res = await fetch('/camera/settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)

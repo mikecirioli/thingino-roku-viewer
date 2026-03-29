@@ -1189,7 +1189,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_timelapse_config_post()
         elif path == "/camera/config":
             self.handle_camera_config_post()
-        elif path == "/settings":
+        elif path == "/camera/settings":
             self.handle_settings_post()
         elif path == "/library/rotate":
             self.handle_library_rotate()
@@ -1542,7 +1542,7 @@ button:hover { background: #0056b3; }
             self.serve_all_camera_info()
         elif path == "/camera/config":
             self.serve_camera_config()
-        elif path == "/settings":
+        elif path == "/camera/settings":
             self.serve_settings()
         elif path.endswith("/info") and path.startswith("/camera/"):
             self.serve_camera_info(path)
@@ -1589,7 +1589,7 @@ button:hover { background: #0056b3; }
         self.wfile.write(json.dumps(_CAMERAS).encode())
 
     def serve_settings(self):
-        """GET /settings — return global settings."""
+        """GET /camera/settings — return global settings."""
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -1597,7 +1597,7 @@ button:hover { background: #0056b3; }
         self.wfile.write(json.dumps(_SETTINGS).encode())
 
     def handle_settings_post(self):
-        """POST /settings — update global settings."""
+        """POST /camera/settings — update global settings."""
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length > 0 else b"{}"
         try:
