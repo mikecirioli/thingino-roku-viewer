@@ -2341,8 +2341,8 @@ button:hover { background: #0056b3; }
         _photo_index += 1
         params = self._merge_settings(parse_qs(parsed.query))
         if "w" in params or "h" in params:
-            max_w = int(params.get("w", [1280])[0])
-            max_h = int(params.get("h", [800])[0])
+            max_w = int(params.get("w", [1920])[0])
+            max_h = int(params.get("h", [1080])[0])
             # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
             disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
             fit = params.get("fit", ["contain"])[0]
