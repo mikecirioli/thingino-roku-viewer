@@ -385,14 +385,56 @@ def get_photos():
     return _photo_cache
 
 
-def resize_image(path, max_w, max_h, disable_exif=False):
-    """Resize image to fit within max_w x max_h. Returns (bytes, content_type)."""
+def resize_image(path, max_w, max_h, disable_exif=False, fit="contain"):
+    """Resize image with various fill modes (contain, cover, blur). Returns (bytes, content_type)."""
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageOps, ImageFilter
         with Image.open(path) as img:
             if not disable_exif:
                 img = ImageOps.exif_transpose(img)
-            img.thumbnail((max_w, max_h), Image.LANCZOS)
+            
+            src_w, src_h = img.size
+            dst_w, dst_h = max_w, max_h
+            
+            # Smart Aspect Ratio Logic
+            src_ratio = src_w / src_h
+            dst_ratio = dst_w / dst_h
+            
+            # If aspect ratios are very close (within 15%), default fit to 'cover' for a better look
+            if fit == "contain" and abs(src_ratio - dst_ratio) / dst_ratio < 0.15:
+                fit = "cover"
+
+            if fit == "cover":
+                # Scale to fill the screen (crop excess)
+                scale = max(dst_w / src_w, dst_h / src_h)
+                new_w = int(src_w * scale)
+                new_h = int(src_h * scale)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+                
+                # Center crop
+                left = (new_w - dst_w) / 2
+                top = (new_h - dst_h) / 2
+                img = img.crop((left, top, left + dst_w, top + dst_h))
+            elif fit == "blur" and ( (src_w < src_h and dst_w > dst_h) or (src_w > src_h and dst_w < dst_h) ):
+                # Portrait on landscape or vice versa: Blur background fill
+                # 1. Create blurred background (scaled to fill)
+                bg_scale = max(dst_w / src_w, dst_h / src_h)
+                bg = img.resize((int(src_w * bg_scale), int(src_h * bg_scale)), Image.LANCZOS)
+                bg = bg.crop(((bg.width - dst_w)//2, (bg.height - dst_h)//2, (bg.width + dst_w)//2, (bg.height + dst_h)//2))
+                bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
+                
+                # 2. Scale original to fit (contain)
+                fg_scale = min(dst_w / src_w, dst_h / src_h)
+                fg_w, fg_h = int(src_w * fg_scale), int(src_h * fg_scale)
+                fg = img.resize((fg_w, fg_h), Image.LANCZOS)
+                
+                # 3. Paste foreground on background
+                bg.paste(fg, ((dst_w - fg_w)//2, (dst_h - fg_h)//2))
+                img = bg
+            else:
+                # Default: contain (fit within bounds)
+                img.thumbnail((max_w, max_h), Image.LANCZOS)
+            
             buf = BytesIO()
             fmt = "JPEG" if path.lower().endswith((".jpg", ".jpeg")) else "PNG"
             img.save(buf, fmt, quality=85)
@@ -685,7 +727,7 @@ _streams = {}
 _streams_lock = threading.Lock()
 
 
-def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True):
+def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contain"):
     """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
     cam = _CAMERAS.get(name)
     if not cam:
@@ -700,7 +742,7 @@ def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True):
     if raw is None:
         return None, None
     if (max_w and max_h) or not disable_exif:
-        return _resize_jpeg(raw, max_w, max_h, disable_exif=disable_exif)
+        return _resize_jpeg(raw, max_w, max_h, disable_exif=disable_exif, fit=fit)
     return raw, "image/jpeg"
 
 
@@ -721,16 +763,44 @@ def camera_info(name):
     }
 
 
-def _resize_jpeg(data, max_w, max_h, disable_exif=True):
+def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain"):
     """Resize JPEG bytes. Returns (bytes, content_type)."""
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageOps, ImageFilter
         img = Image.open(BytesIO(data))
         if not disable_exif:
             img = ImageOps.exif_transpose(img)
         
         if max_w and max_h:
-            img.thumbnail((max_w, max_h), Image.LANCZOS)
+            src_w, src_h = img.size
+            dst_w, dst_h = max_w, max_h
+            
+            # Use smart scaling if ratios are close
+            src_ratio = src_w / src_h
+            dst_ratio = dst_w / dst_h
+            if fit == "contain" and abs(src_ratio - dst_ratio) / dst_ratio < 0.15:
+                fit = "cover"
+
+            if fit == "cover":
+                scale = max(dst_w / src_w, dst_h / src_h)
+                new_w, new_h = int(src_w * scale), int(src_h * scale)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+                left = (new_w - dst_w) / 2
+                top = (new_h - dst_h) / 2
+                img = img.crop((left, top, left + dst_w, top + dst_h))
+            elif fit == "blur" and ( (src_w < src_h and dst_w > dst_h) or (src_w > src_h and dst_w < dst_h) ):
+                # Blur background fill
+                bg_scale = max(dst_w / src_w, dst_h / src_h)
+                bg = img.resize((int(src_w * bg_scale), int(src_h * bg_scale)), Image.LANCZOS)
+                bg = bg.crop(((bg.width - dst_w)//2, (bg.height - dst_h)//2, (bg.width + dst_w)//2, (bg.height + dst_h)//2))
+                bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
+                fg_scale = min(dst_w / src_w, dst_h / src_h)
+                fg_w, fg_h = int(src_w * fg_scale), int(src_h * fg_scale)
+                fg = img.resize((fg_w, fg_h), Image.LANCZOS)
+                bg.paste(fg, ((dst_w - fg_w)//2, (dst_h - fg_h)//2))
+                img = bg
+            else:
+                img.thumbnail((max_w, max_h), Image.LANCZOS)
         elif disable_exif:
             return data, "image/jpeg"
 
@@ -1195,8 +1265,92 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_library_rotate()
         elif path == "/library/delete":
             self.handle_library_delete()
+        elif path == "/library/upload":
+            self.handle_library_upload()
         else:
             self.send_error(404)
+
+    def handle_library_upload(self):
+        """POST /library/upload — handles multipart/form-data upload of multiple photos."""
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            self.send_error(400, "Bad content-type")
+            return
+        
+        try:
+            boundary = content_type.split("boundary=")[1].encode()
+        except IndexError:
+            self.send_error(400, "Missing boundary")
+            return
+        
+        content_len = int(self.headers.get("Content-Length", 0))
+        if content_len == 0:
+            self.send_error(400, "Empty upload")
+            return
+
+        # Read the raw body
+        body = self.rfile.read(content_len)
+        parts = body.split(b"--" + boundary)
+        
+        saved_count = 0
+        for part in parts:
+            if not part or part == b"--\r\n" or part == b"--":
+                continue
+            
+            # Split headers and content
+            try:
+                head, content = part.split(b"\r\n\r\n", 1)
+                head = head.decode("utf-8", "ignore")
+                
+                # Check if it's a file part
+                if 'filename="' not in head:
+                    continue
+                
+                import re
+                match = re.search(r'filename="([^"]+)"', head)
+                if not match:
+                    continue
+                
+                filename = match.group(1)
+                ext = os.path.splitext(filename)[1].lower()
+                if ext not in EXTS:
+                    continue
+                
+                # Trim trailing CRLF
+                if content.endswith(b"\r\n"):
+                    content = content[:-2]
+                
+                # Sanitize filename
+                safe_name = "".join([c for c in filename if c.isalnum() or c in ".-_"]).strip()
+                if not safe_name:
+                    continue
+                
+                # Unique filename if exists
+                save_path = os.path.join(PHOTO_DIR, safe_name)
+                counter = 1
+                while os.path.exists(save_path):
+                    name_base, name_ext = os.path.splitext(safe_name)
+                    save_path = os.path.join(PHOTO_DIR, "{}_{}{}".format(name_base, counter, name_ext))
+                    counter += 1
+                
+                with open(save_path, "wb") as f:
+                    f.write(content)
+                saved_count += 1
+                print("  upload: saved {} as {}".format(filename, os.path.basename(save_path)))
+            except Exception as e:
+                print("  upload: error processing part: {}".format(e))
+                continue
+
+        # Clear photo cache to pick up new images
+        global _photo_cache, _cache_time
+        _photo_cache = []
+        _cache_time = 0
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "ok", "saved": saved_count}).encode())
 
     def handle_api_login(self):
         """POST /api/login — for non-web clients like Roku."""
@@ -2030,7 +2184,8 @@ button:hover { background: #0056b3; }
         max_h = int(params["h"][0]) if "h" in params else None
         # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
         disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
-        data, ct = camera_snapshot(name, max_w, max_h, disable_exif=disable_exif)
+        fit = params.get("fit", ["contain"])[0]
+        data, ct = camera_snapshot(name, max_w, max_h, disable_exif=disable_exif, fit=fit)
         if not data:
             self.send_error(502, "Failed to fetch snapshot for {}".format(name))
             return
@@ -2134,7 +2289,8 @@ button:hover { background: #0056b3; }
             max_h = int(params.get("h", [800])[0])
             # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
             disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
-            data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif)
+            fit = params.get("fit", ["contain"])[0]
+            data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif, fit=fit)
             if data:
                 self.send_response(200)
                 self.send_header("Content-Type", ct)

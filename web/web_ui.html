@@ -49,6 +49,8 @@
         }
         #camera-list li:hover { background-color: rgba(255,255,255,0.1); }
         #camera-list li.active { background-color: rgba(255,103,0,0.15); border-left: 3px solid var(--accent-color); }
+        #camera-list li.cam-hls { border-left-color: #3498db; }
+        #camera-list li.cam-hls.active { background-color: rgba(52, 152, 219, 0.15); border-left: 3px solid #3498db; }
         .cam-name { font-weight: bold; font-size: 1.1em; }
         .cam-desc { font-size: 0.8em; color: var(--accent-color); margin-top: 5px; }
 
@@ -322,6 +324,11 @@
             <div id="library-view" style="display: none; padding: 20px; overflow-y: auto; flex: 1 1 0; min-height: 0;">
                 <div class="tl-section">
                     <h2>Photo Library</h2>
+                    <div id="lib-controls" style="margin-bottom: 20px; display: flex; align-items: center; gap: 15px;">
+                        <input type="file" id="lib-upload-input" multiple accept="image/*" style="display: none;">
+                        <button class="btn" id="btn-upload-photos">Upload Multiple New Images</button>
+                        <span id="upload-status" style="font-size: 0.9em; color: var(--accent-color);"></span>
+                    </div>
                     <div id="lib-status" style="color: var(--accent-color); margin-bottom: 15px;"></div>
                     <div id="lib-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;"></div>
                 </div>
@@ -384,6 +391,21 @@
                             <label>Default Height (px)</label>
                             <input type="number" id="config-global-height" placeholder="e.g. 1080">
                         </div>
+                        <div style="display: flex; align-items: flex-end; padding-bottom: 15px;">
+                            <button class="btn" id="btn-detect-res" style="padding: 6px 10px; font-size: 0.8em;">Match Screen</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Fill Mode (Scale & Crop)</label>
+                        <select id="config-global-fit">
+                            <option value="contain">Contain (Show All, Black Bars)</option>
+                            <option value="cover">Cover (Fill Screen, Crop Center)</option>
+                            <option value="blur">Blur-Fill (Best for Portrait on TV)</option>
+                        </select>
+                        <p style="font-size: 0.75em; color: #9ab; margin-top: 5px;">
+                            Determines how images are optimized to fit the target resolution.
+                        </p>
                     </div>
 
                     <div class="form-group">
@@ -573,8 +595,12 @@
             configGlobalRotate: document.getElementById('config-global-rotate'),
             configGlobalWidth: document.getElementById('config-global-width'),
             configGlobalHeight: document.getElementById('config-global-height'),
+            configGlobalFit: document.getElementById('config-global-fit'),
             configGlobalParams: document.getElementById('config-global-params'),
             configGlobalStatus: document.getElementById('global-settings-status'),
+            libUploadInput: document.getElementById('lib-upload-input'),
+            libUploadBtn: document.getElementById('btn-upload-photos'),
+            libUploadStatus: document.getElementById('upload-status'),
             cameraModal: document.getElementById('camera-modal'),
             editCamId: document.getElementById('edit-cam-id'),
             editCamName: document.getElementById('edit-cam-name'),
@@ -710,6 +736,7 @@
                         const li = document.createElement('li');
                         li.dataset.name = name;
                         li.dataset.mode = 'hls';
+                        li.className = 'cam-hls';
                         const ptz = cam.ptz ? ' + PTZ' : '';
                         li.innerHTML = `<div class="cam-name">${name}</div><div class="cam-desc">(hls)${ptz}</div>`;
                         li.onclick = () => selectCamera(name, 'hls');
@@ -1247,6 +1274,40 @@
             _libDeleteTarget = null;
         };
 
+        els.libUploadBtn.onclick = () => els.libUploadInput.click();
+        els.libUploadInput.onchange = async () => {
+            const files = els.libUploadInput.files;
+            if (files.length === 0) return;
+
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i]);
+            }
+
+            els.libUploadStatus.textContent = `Uploading ${files.length} images...`;
+            els.libUploadBtn.disabled = true;
+
+            try {
+                const res = await fetch('/camera/library/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (res.ok) {
+                    const result = await res.json();
+                    els.libUploadStatus.textContent = `Successfully uploaded ${result.saved} images.`;
+                    setTimeout(() => { els.libUploadStatus.textContent = ''; }, 5000);
+                    loadLibrary();
+                } else {
+                    els.libUploadStatus.textContent = 'Upload failed: ' + res.status;
+                }
+            } catch (err) {
+                els.libUploadStatus.textContent = 'Error: ' + err.message;
+            } finally {
+                els.libUploadBtn.disabled = false;
+                els.libUploadInput.value = '';
+            }
+        };
+
         // --- Screensaver ---
         document.getElementById('btn-screensaver').onclick = startScreensaver;
         els.ssMode.onclick = stopScreensaver;
@@ -1413,11 +1474,12 @@
                     els.configGlobalRotate.checked = _globalSettings.noexif === 'false';
                     els.configGlobalWidth.value = _globalSettings.w || '';
                     els.configGlobalHeight.value = _globalSettings.h || '';
+                    els.configGlobalFit.value = _globalSettings.fit || 'contain';
                     
                     // Reconstruct extra params string from other keys
                     const extra = [];
                     for (const k in _globalSettings) {
-                        if (!['noexif', 'w', 'h'].includes(k)) {
+                        if (!['noexif', 'w', 'h', 'fit'].includes(k)) {
                             extra.push(`${k}=${_globalSettings[k]}`);
                         }
                     }
@@ -1429,13 +1491,19 @@
             }
         }
 
+        document.getElementById('btn-detect-res').onclick = () => {
+            els.configGlobalWidth.value = window.screen.width;
+            els.configGlobalHeight.value = window.screen.height;
+        };
+
         document.getElementById('btn-save-global-settings').onclick = async () => {
             const btn = document.getElementById('btn-save-global-settings');
             btn.disabled = true;
             els.configGlobalStatus.textContent = 'Saving...';
 
             const settings = {
-                noexif: els.configGlobalRotate.checked ? 'false' : 'true'
+                noexif: els.configGlobalRotate.checked ? 'false' : 'true',
+                fit: els.configGlobalFit.value
             };
             if (els.configGlobalWidth.value) settings.w = els.configGlobalWidth.value;
             if (els.configGlobalHeight.value) settings.h = els.configGlobalHeight.value;
