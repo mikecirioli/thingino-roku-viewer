@@ -1263,8 +1263,13 @@ class PhotoHandler(BaseHTTPRequestHandler):
     def _merge_settings(self, params):
         """Merge global _SETTINGS as defaults into params."""
         for key, value in _SETTINGS.items():
-            if key not in params:
+            if key not in params or not params[key][0]:
                 params[key] = [value]
+        
+        # If no fit mode is specified even after merging settings, default to 'blur'
+        if "fit" not in params or not params["fit"][0]:
+            params["fit"] = ["blur"]
+            
         return params
 
     def do_POST(self):
