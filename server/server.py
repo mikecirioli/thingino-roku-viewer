@@ -408,10 +408,11 @@ def resize_image(path, max_w, max_h, disable_exif=False):
 
 _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, password}}
 _WEB_AUTH = None # {username, password}
+_SETTINGS = {} # global settings (screensaver params, etc)
 
 def _load_cameras():
     """Load camera config from YAML file or CAMERAS env var."""
-    global _CAMERAS, _WEB_AUTH, HA_URL, HA_TOKEN
+    global _CAMERAS, _WEB_AUTH, _SETTINGS, HA_URL, HA_TOKEN
 
     # Try YAML file first
     if os.path.isfile(CAMERAS_FILE):
@@ -425,6 +426,9 @@ def _load_cameras():
             if cfg and "web_auth" in cfg:
                 _WEB_AUTH = cfg["web_auth"]
                 print(f"  web auth configured from {CAMERAS_FILE}")
+            if cfg and "settings" in cfg:
+                _SETTINGS = cfg["settings"]
+                print(f"  global settings loaded from {CAMERAS_FILE}")
             if cfg and "ha_url" in cfg and not HA_URL:
                 HA_URL = cfg["ha_url"].rstrip("/")
                 print(f"  ha_url configured from {CAMERAS_FILE}")
@@ -474,8 +478,10 @@ def _save_cameras():
                 print(f"WARNING: failed to parse existing {CAMERAS_FILE}: {e}")
         
         full_cfg["cameras"] = _CAMERAS
-        
+        full_cfg["settings"] = _SETTINGS
+
         with open(CAMERAS_FILE, "w") as f:
+
             yaml.safe_dump(full_cfg, f, default_flow_style=False)
         print(f"  cameras: saved {len(_CAMERAS)} to {CAMERAS_FILE}")
         return True
@@ -679,7 +685,7 @@ _streams = {}
 _streams_lock = threading.Lock()
 
 
-def camera_snapshot(name, max_w=None, max_h=None):
+def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True):
     """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
     cam = _CAMERAS.get(name)
     if not cam:
@@ -693,8 +699,8 @@ def camera_snapshot(name, max_w=None, max_h=None):
     raw = stream.get_frame()
     if raw is None:
         return None, None
-    if max_w and max_h:
-        return _resize_jpeg(raw, max_w, max_h)
+    if (max_w and max_h) or not disable_exif:
+        return _resize_jpeg(raw, max_w, max_h, disable_exif=disable_exif)
     return raw, "image/jpeg"
 
 
@@ -715,14 +721,19 @@ def camera_info(name):
     }
 
 
-def _resize_jpeg(data, max_w, max_h):
+def _resize_jpeg(data, max_w, max_h, disable_exif=True):
     """Resize JPEG bytes. Returns (bytes, content_type)."""
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
         img = Image.open(BytesIO(data))
-        if img.width <= max_w and img.height <= max_h:
+        if not disable_exif:
+            img = ImageOps.exif_transpose(img)
+        
+        if max_w and max_h:
+            img.thumbnail((max_w, max_h), Image.LANCZOS)
+        elif disable_exif:
             return data, "image/jpeg"
-        img.thumbnail((max_w, max_h), Image.LANCZOS)
+
         buf = BytesIO()
         img.save(buf, "JPEG", quality=85)
         return buf.getvalue(), "image/jpeg"
@@ -1145,6 +1156,13 @@ class PhotoHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def _merge_settings(self, params):
+        """Merge global _SETTINGS as defaults into params."""
+        for key, value in _SETTINGS.items():
+            if key not in params:
+                params[key] = [value]
+        return params
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
@@ -1171,6 +1189,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_timelapse_config_post()
         elif path == "/camera/config":
             self.handle_camera_config_post()
+        elif path == "/settings":
+            self.handle_settings_post()
         elif path == "/library/rotate":
             self.handle_library_rotate()
         elif path == "/library/delete":
@@ -1522,6 +1542,8 @@ button:hover { background: #0056b3; }
             self.serve_all_camera_info()
         elif path == "/camera/config":
             self.serve_camera_config()
+        elif path == "/settings":
+            self.serve_settings()
         elif path.endswith("/info") and path.startswith("/camera/"):
             self.serve_camera_info(path)
         elif path.startswith("/camera/"):
@@ -1565,6 +1587,39 @@ button:hover { background: #0056b3; }
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(_CAMERAS).encode())
+
+    def serve_settings(self):
+        """GET /settings — return global settings."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(_SETTINGS).encode())
+
+    def handle_settings_post(self):
+        """POST /settings — update global settings."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        if not isinstance(data, dict):
+            self.send_error(400, "Expected JSON object")
+            return
+
+        global _SETTINGS
+        _SETTINGS = data
+        if _save_cameras():
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode())
+        else:
+            self.send_error(500, "Failed to persist configuration to file")
 
     def serve_timelapse_config(self):
         """GET /timelapse/config?camera=<name> — return capture config for a camera."""
@@ -1970,10 +2025,12 @@ button:hover { background: #0056b3; }
         if not name:
             self.send_error(400, "Missing camera name")
             return
-        params = parse_qs(parsed.query)
+        params = self._merge_settings(parse_qs(parsed.query))
         max_w = int(params["w"][0]) if "w" in params else None
         max_h = int(params["h"][0]) if "h" in params else None
-        data, ct = camera_snapshot(name, max_w, max_h)
+        # Disable EXIF transpose by default, unless noexif=0 or noexif=false is explicitly provided
+        disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
+        data, ct = camera_snapshot(name, max_w, max_h, disable_exif=disable_exif)
         if not data:
             self.send_error(502, "Failed to fetch snapshot for {}".format(name))
             return
@@ -2071,7 +2128,7 @@ button:hover { background: #0056b3; }
             
         path = _shuffled_photos[_photo_index]
         _photo_index += 1
-        params = parse_qs(parsed.query)
+        params = self._merge_settings(parse_qs(parsed.query))
         if "w" in params or "h" in params:
             max_w = int(params.get("w", [1280])[0])
             max_h = int(params.get("h", [800])[0])

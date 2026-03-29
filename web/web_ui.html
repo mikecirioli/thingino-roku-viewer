@@ -358,6 +358,47 @@
                         </tbody>
                     </table>
                 </div>
+
+                <div class="tl-section">
+                    <h2>Global Server Settings</h2>
+                    <p style="font-size: 0.85em; color: #9ab; margin-top: -10px; margin-bottom: 20px;">
+                        These settings affect the default behavior for all clients (Roku screensaver, web, etc.).
+                    </p>
+                    
+                    <div class="tl-capture-row" style="margin-bottom: 20px;">
+                        <label class="tl-toggle">
+                            <input type="checkbox" id="config-global-rotate">
+                            <span class="tl-toggle-slider"></span>
+                        </label>
+                        <span class="tl-capture-label">
+                            Auto-rotate images (respect EXIF orientation)
+                        </span>
+                    </div>
+
+                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Default Width (px)</label>
+                            <input type="number" id="config-global-width" placeholder="e.g. 1920">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Default Height (px)</label>
+                            <input type="number" id="config-global-height" placeholder="e.g. 1080">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Additional URL Parameters</label>
+                        <input type="text" id="config-global-params" placeholder="e.g. grayscale=1&brightness=1.2">
+                        <p style="font-size: 0.75em; color: #9ab; margin-top: 5px;">
+                            Comma-separated or ampersand-separated key=value pairs.
+                        </p>
+                    </div>
+
+                    <div style="margin-top: 10px;">
+                        <button class="btn" id="btn-save-global-settings" style="background-color: var(--accent-color);">Save Global Settings</button>
+                        <span id="global-settings-status" style="margin-left: 15px; font-size: 0.9em; color: var(--accent-color);"></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -529,6 +570,11 @@
             // Config
             configView: document.getElementById('config-view'),
             configCameraList: document.getElementById('config-camera-list'),
+            configGlobalRotate: document.getElementById('config-global-rotate'),
+            configGlobalWidth: document.getElementById('config-global-width'),
+            configGlobalHeight: document.getElementById('config-global-height'),
+            configGlobalParams: document.getElementById('config-global-params'),
+            configGlobalStatus: document.getElementById('global-settings-status'),
             cameraModal: document.getElementById('camera-modal'),
             editCamId: document.getElementById('edit-cam-id'),
             editCamName: document.getElementById('edit-cam-name'),
@@ -1349,18 +1395,77 @@
 
         // --- Configuration Manager ---
         let _camConfig = {};
+        let _globalSettings = {};
 
         async function loadCameraConfig() {
             try {
-                const res = await fetch('/camera/config');
-                if (!res.ok) throw new Error(res.status);
-                _camConfig = await res.json();
+                const [camRes, settingsRes] = await Promise.all([
+                    fetch('/camera/config'),
+                    fetch('/settings')
+                ]);
+                
+                if (!camRes.ok) throw new Error(camRes.status);
+                _camConfig = await camRes.json();
                 renderConfigList();
+
+                if (settingsRes.ok) {
+                    _globalSettings = await settingsRes.json();
+                    els.configGlobalRotate.checked = _globalSettings.noexif === 'false';
+                    els.configGlobalWidth.value = _globalSettings.w || '';
+                    els.configGlobalHeight.value = _globalSettings.h || '';
+                    
+                    // Reconstruct extra params string from other keys
+                    const extra = [];
+                    for (const k in _globalSettings) {
+                        if (!['noexif', 'w', 'h'].includes(k)) {
+                            extra.push(`${k}=${_globalSettings[k]}`);
+                        }
+                    }
+                    els.configGlobalParams.value = extra.join('&');
+                }
             } catch (err) {
-                console.error('Failed to load camera config:', err);
+                console.error('Failed to load configuration:', err);
                 els.configCameraList.innerHTML = `<tr><td colspan="4" style="color:red; padding:20px;">Failed to load configuration from server. Make sure cameras.yaml is present.</td></tr>`;
             }
         }
+
+        document.getElementById('btn-save-global-settings').onclick = async () => {
+            const btn = document.getElementById('btn-save-global-settings');
+            btn.disabled = true;
+            els.configGlobalStatus.textContent = 'Saving...';
+
+            const settings = {
+                noexif: els.configGlobalRotate.checked ? 'false' : 'true'
+            };
+            if (els.configGlobalWidth.value) settings.w = els.configGlobalWidth.value;
+            if (els.configGlobalHeight.value) settings.h = els.configGlobalHeight.value;
+
+            const extraStr = els.configGlobalParams.value.trim();
+            if (extraStr) {
+                const pairs = extraStr.split(/[&,]/);
+                pairs.forEach(p => {
+                    const [k, v] = p.split('=');
+                    if (k && v) settings[k.trim()] = v.trim();
+                });
+            }
+
+            try {
+                const res = await fetch('/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                if (res.ok) {
+                    els.configGlobalStatus.textContent = 'Settings saved successfully!';
+                    setTimeout(() => { els.configGlobalStatus.textContent = ''; }, 3000);
+                } else {
+                    els.configGlobalStatus.textContent = 'Error: ' + await res.text();
+                }
+            } catch (err) {
+                els.configGlobalStatus.textContent = 'Error: ' + err.message;
+            }
+            btn.disabled = false;
+        };
 
         function renderConfigList() {
             els.configCameraList.innerHTML = '';
