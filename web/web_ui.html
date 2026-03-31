@@ -666,6 +666,12 @@
         async function init() {
             try {
                 const res = await fetch('/camera/list', {credentials: 'same-origin'});
+                // Detect auth redirect: nginx 302s to /login on auth failure,
+                // fetch follows silently and returns 200 HTML instead of JSON.
+                if (res.redirected || res.url.includes('/login')) {
+                    window.location.href = '/login';
+                    return;
+                }
                 if (!res.ok) throw new Error(res.status);
                 state.camNames = await res.json();
 

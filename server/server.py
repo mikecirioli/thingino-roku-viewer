@@ -1403,7 +1403,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
             if _WEB_AUTH and user == _WEB_AUTH.get('username') and pwd == _WEB_AUTH.get('password'):
                 import hashlib
                 session_val = hashlib.sha256(f"{user}:{pwd}".encode()).hexdigest()
-                cookie = f'session={session_val}; Path=/; HttpOnly'
+                cookie = f'session={session_val}; Path=/; HttpOnly; Secure; SameSite=Lax'
                 
                 resp = json.dumps({'success': True, 'cookie': cookie}).encode('utf-8')
                 self.send_response(200)
@@ -1431,7 +1431,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
             import hashlib
             session = hashlib.sha256(f"{user}:{pwd}".encode()).hexdigest()
             self.send_response(302)
-            self.send_header('Set-Cookie', f'session={session}; Path=/; HttpOnly')
+            self.send_header('Set-Cookie', f'session={session}; Path=/; HttpOnly; Secure; SameSite=Lax')
             self.send_header('Location', '/web')
             self.end_headers()
         else:
