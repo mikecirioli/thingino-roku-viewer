@@ -386,7 +386,7 @@ def get_photos():
     return _photo_cache
 
 
-def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_threshold=0.15):
+def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_threshold=0):
     """Resize image with various fill modes (contain, cover, blur). Returns (bytes, content_type)."""
     try:
         import hashlib
@@ -437,22 +437,29 @@ def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_thr
                 left = (new_w - dst_w) / 2
                 top = (new_h - dst_h) / 2
                 img = img.crop((left, top, left + dst_w, top + dst_h))
-            elif fit == "blur" and ( (src_w < src_h and dst_w > dst_h) or (src_w > src_h and dst_w < dst_h) ):
-                # Portrait on landscape or vice versa: Blur background fill
-                # 1. Create blurred background (scaled to fill)
-                bg_scale = max(dst_w / src_w, dst_h / src_h)
-                bg = img.resize((int(src_w * bg_scale), int(src_h * bg_scale)), Image.LANCZOS)
-                bg = bg.crop(((bg.width - dst_w)//2, (bg.height - dst_h)//2, (bg.width + dst_w)//2, (bg.height + dst_h)//2))
-                bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
-                
-                # 2. Scale original to fit (contain)
-                fg_scale = min(dst_w / src_w, dst_h / src_h)
-                fg_w, fg_h = int(src_w * fg_scale), int(src_h * fg_scale)
-                fg = img.resize((fg_w, fg_h), Image.LANCZOS)
-                
-                # 3. Paste foreground on background
-                bg.paste(fg, ((dst_w - fg_w)//2, (dst_h - fg_h)//2))
-                img = bg
+            elif fit == "blur":
+                # Blur background fill for any aspect ratio mismatch
+                # Works for portrait on landscape, wide panoramas, etc.
+                src_ratio = src_w / src_h
+                dst_ratio = dst_w / dst_h
+                if abs(src_ratio - dst_ratio) > 0.01:
+                    # 1. Create blurred background (scaled to fill)
+                    bg_scale = max(dst_w / src_w, dst_h / src_h)
+                    bg = img.resize((int(src_w * bg_scale), int(src_h * bg_scale)), Image.LANCZOS)
+                    bg = bg.crop(((bg.width - dst_w)//2, (bg.height - dst_h)//2, (bg.width + dst_w)//2, (bg.height + dst_h)//2))
+                    bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
+
+                    # 2. Scale original to fit (contain)
+                    fg_scale = min(dst_w / src_w, dst_h / src_h)
+                    fg_w, fg_h = int(src_w * fg_scale), int(src_h * fg_scale)
+                    fg = img.resize((fg_w, fg_h), Image.LANCZOS)
+
+                    # 3. Paste foreground on background
+                    bg.paste(fg, ((dst_w - fg_w)//2, (dst_h - fg_h)//2))
+                    img = bg
+                else:
+                    # Ratios match — just resize to fill
+                    img = img.resize((dst_w, dst_h), Image.LANCZOS)
             else:
                 # Default: contain (fit within bounds)
                 img.thumbnail((max_w, max_h), Image.LANCZOS)
@@ -761,7 +768,7 @@ _streams = {}
 _streams_lock = threading.Lock()
 
 
-def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contain", crop_threshold=0.15):
+def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contain", crop_threshold=0):
     """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
     cam = _CAMERAS.get(name)
     if not cam:
@@ -797,7 +804,7 @@ def camera_info(name):
     }
 
 
-def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain", crop_threshold=0.15):
+def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain", crop_threshold=0):
     """Resize JPEG bytes. Returns (bytes, content_type)."""
     try:
         from PIL import Image, ImageOps, ImageFilter
@@ -822,17 +829,21 @@ def _resize_jpeg(data, max_w, max_h, disable_exif=True, fit="contain", crop_thre
                 left = (new_w - dst_w) / 2
                 top = (new_h - dst_h) / 2
                 img = img.crop((left, top, left + dst_w, top + dst_h))
-            elif fit == "blur" and ( (src_w < src_h and dst_w > dst_h) or (src_w > src_h and dst_w < dst_h) ):
-                # Blur background fill
-                bg_scale = max(dst_w / src_w, dst_h / src_h)
-                bg = img.resize((int(src_w * bg_scale), int(src_h * bg_scale)), Image.LANCZOS)
-                bg = bg.crop(((bg.width - dst_w)//2, (bg.height - dst_h)//2, (bg.width + dst_w)//2, (bg.height + dst_h)//2))
-                bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
-                fg_scale = min(dst_w / src_w, dst_h / src_h)
-                fg_w, fg_h = int(src_w * fg_scale), int(src_h * fg_scale)
-                fg = img.resize((fg_w, fg_h), Image.LANCZOS)
-                bg.paste(fg, ((dst_w - fg_w)//2, (dst_h - fg_h)//2))
-                img = bg
+            elif fit == "blur":
+                src_ratio = src_w / src_h
+                dst_ratio = dst_w / dst_h
+                if abs(src_ratio - dst_ratio) > 0.01:
+                    bg_scale = max(dst_w / src_w, dst_h / src_h)
+                    bg = img.resize((int(src_w * bg_scale), int(src_h * bg_scale)), Image.LANCZOS)
+                    bg = bg.crop(((bg.width - dst_w)//2, (bg.height - dst_h)//2, (bg.width + dst_w)//2, (bg.height + dst_h)//2))
+                    bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
+                    fg_scale = min(dst_w / src_w, dst_h / src_h)
+                    fg_w, fg_h = int(src_w * fg_scale), int(src_h * fg_scale)
+                    fg = img.resize((fg_w, fg_h), Image.LANCZOS)
+                    bg.paste(fg, ((dst_w - fg_w)//2, (dst_h - fg_h)//2))
+                    img = bg
+                else:
+                    img = img.resize((dst_w, dst_h), Image.LANCZOS)
             else:
                 img.thumbnail((max_w, max_h), Image.LANCZOS)
         elif disable_exif:
@@ -2237,9 +2248,9 @@ button:hover { background: #0056b3; }
         disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
         fit = params.get("fit", ["contain"])[0]
         try:
-            crop_threshold = float(params.get("crop_threshold", [0.15])[0])
+            crop_threshold = float(params.get("crop_threshold", [0])[0])
         except (ValueError, IndexError):
-            crop_threshold = 0.15
+            crop_threshold = 0
             
         data, ct = camera_snapshot(name, max_w, max_h, disable_exif=disable_exif, fit=fit, crop_threshold=crop_threshold)
         if not data:
@@ -2348,9 +2359,9 @@ button:hover { background: #0056b3; }
             disable_exif = not (params.get("noexif", [""])[0].lower() in ["0", "false", "no"])
             fit = params.get("fit", ["contain"])[0]
             try:
-                crop_threshold = float(params.get("crop_threshold", [0.15])[0])
+                crop_threshold = float(params.get("crop_threshold", [0])[0])
             except (ValueError, IndexError):
-                crop_threshold = 0.15
+                crop_threshold = 0
             
             data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif, fit=fit, crop_threshold=crop_threshold)
             if data:
