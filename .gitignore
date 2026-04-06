@@ -7,3 +7,5 @@ roku/*.pkg
 *.pyc
 __pycache__/
 .env
+server-config.yaml
+test_auth.py
