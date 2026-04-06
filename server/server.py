@@ -2604,10 +2604,14 @@ button:hover { background: #0056b3; }
                 if not photo_id:
                     exif_ts = extract_exif_timestamp(photo_path)
                     geotag_db.add_photo(filename, photo_path, exif_ts)
+                    photo_id = geotag_db.get_photo_id(filename)
 
-                # Check if it has GPS (but don't copy to DB - EXIF is the source)
+                # Read GPS from EXIF and sync to database (EXIF is source of truth, DB caches it)
                 geotag = extract_gps_from_exif(photo_path)
                 if geotag:
+                    # Populate database with GPS from EXIF
+                    geotag.source = 'exif'
+                    geotag_db.set_geotag_metadata(filename, geotag)
                     has_gps += 1
                 else:
                     no_gps += 1

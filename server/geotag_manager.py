@@ -246,19 +246,19 @@ class GeotagDatabase:
 
         if status == 'complete':
             query = '''
-                SELECT p.filename, g.* FROM photos p
+                SELECT p.filename, p.exif_timestamp, g.* FROM photos p
                 JOIN geotags g ON p.id = g.photo_id
                 WHERE g.latitude IS NOT NULL AND g.longitude IS NOT NULL
             '''
         elif status == 'missing':
             query = '''
-                SELECT p.filename FROM photos p
+                SELECT p.filename, p.exif_timestamp FROM photos p
                 LEFT JOIN geotags g ON p.id = g.photo_id
                 WHERE g.photo_id IS NULL
             '''
         else:  # all
             query = '''
-                SELECT p.filename, g.* FROM photos p
+                SELECT p.filename, p.exif_timestamp, g.* FROM photos p
                 LEFT JOIN geotags g ON p.id = g.photo_id
             '''
 
@@ -268,8 +268,11 @@ class GeotagDatabase:
 
         results = []
         for row in rows:
-            result = {'filename': row['filename']}
-            if status != 'missing' and len(row.keys()) > 1:
+            result = {
+                'filename': row['filename'],
+                'exif_timestamp': row['exif_timestamp'] if row['exif_timestamp'] else None
+            }
+            if status != 'missing' and len(row.keys()) > 2:
                 result['geotag'] = {
                     'latitude': row['latitude'],
                     'longitude': row['longitude'],
