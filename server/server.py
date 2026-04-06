@@ -82,6 +82,16 @@ try:
 except ImportError:
     from urllib2 import urlopen, Request, URLError
 
+# Geotag management
+from geotag_manager import (
+    GeotagDatabase,
+    GeoTag,
+    extract_gps_from_exif,
+    extract_exif_timestamp,
+    cluster_photos_by_time,
+    infer_geotags_from_cluster
+)
+
 PHOTO_DIR = os.environ.get("PHOTO_DIR", "/media")
 PORT = int(os.environ.get("PORT", "8099"))
 REFRESH = int(os.environ.get("REFRESH", "30"))
@@ -492,6 +502,10 @@ def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_thr
 _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, password}}
 _WEB_AUTH = None # {username, password}
 _SETTINGS = {} # global settings (screensaver params, etc)
+
+# Geotag database
+GEOTAG_DB_PATH = os.environ.get("GEOTAG_DB_PATH", "/data/geotags/geotags.db")
+geotag_db = None
 
 def _load_cameras():
     """Load camera config from YAML file or CAMERAS env var."""
@@ -1317,6 +1331,12 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_library_delete()
         elif path == "/library/upload":
             self.handle_library_upload()
+        elif path == "/photos/geotag/import-exif":
+            self.handle_geotag_import_exif()
+        elif path == "/photos/geotag/auto-infer":
+            self.handle_geotag_auto_infer()
+        elif path == "/photos/geotag/batch-update":
+            self.handle_geotag_batch_update()
         else:
             self.send_error(404)
 
@@ -1707,6 +1727,21 @@ button:hover { background: #0056b3; }
         self.end_headers()
         self.wfile.write(data)
 
+    def do_PUT(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        # Require authorization for all PUT requests
+        if not self._is_request_authorized():
+            self.send_error(401, "Authentication Required")
+            return
+
+        # --- Authorized PUT requests ---
+        if path.startswith("/photo/") and path.endswith("/geotag"):
+            self.handle_put_photo_geotag(path)
+        else:
+            self.send_error(404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
@@ -1772,6 +1807,10 @@ button:hover { background: #0056b3; }
             self.serve_library_list()
         elif path == "/library/thumb":
             self.serve_library_thumb(parsed)
+        elif path == "/photos/geotags":
+            self.serve_photos_geotags(parsed)
+        elif path.startswith("/photo/") and path.endswith("/geotag"):
+            self.serve_photo_geotag(path)
         elif path.startswith("/web/"):
             self.serve_web_static(path)
         elif path == "/login":
@@ -2401,6 +2440,328 @@ button:hover { background: #0056b3; }
         self.end_headers()
         self.wfile.write(json.dumps(all_info).encode())
 
+    # ---- Geotag Management Endpoints ----
+
+    def serve_photo_geotag(self, path):
+        """GET /photo/<filename>/geotag — get geotag for a photo
+
+        Always reads coordinates from EXIF (source of truth).
+        Adds metadata (source, confidence, location_name) from database if available.
+        """
+        # Extract filename from path: /photo/IMG_1234.jpg/geotag
+        parts = path.split('/')
+        if len(parts) < 3:
+            self.send_error(400, "Invalid path")
+            return
+        filename = parts[2]
+
+        # Check if photo exists
+        photo_path = os.path.join(PHOTO_DIR, filename)
+        if not os.path.isfile(photo_path):
+            self.send_error(404, "Photo not found")
+            return
+
+        # Always read from EXIF (source of truth)
+        geotag = extract_gps_from_exif(photo_path)
+
+        # Add metadata from database if available
+        metadata = None
+        if geotag_db is not None:
+            metadata = geotag_db.get_geotag_metadata(filename)
+
+        if geotag and metadata:
+            # Merge metadata into geotag
+            geotag.source = metadata['source']
+            geotag.confidence = metadata['confidence']
+            geotag.location_name = metadata['location_name']
+            geotag.updated_at = metadata['updated_at']
+            geotag.updated_by = metadata['updated_by']
+
+        response = {
+            'filename': filename,
+            'geotag': geotag.to_dict() if geotag else None
+        }
+
+        data = json.dumps(response).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_put_photo_geotag(self, path):
+        """PUT /photo/<filename>/geotag — set geotag for a photo
+
+        Writes coordinates to EXIF first (source of truth).
+        Then stores metadata (source, confidence, location_name) in database.
+        """
+        from geotag_manager import write_gps_to_exif
+
+        # Extract filename from path
+        parts = path.split('/')
+        if len(parts) < 3:
+            self.send_error(400, "Invalid path")
+            return
+        filename = parts[2]
+
+        # Check if photo exists
+        photo_path = os.path.join(PHOTO_DIR, filename)
+        if not os.path.isfile(photo_path):
+            self.send_error(404, "Photo not found")
+            return
+
+        # Parse request body
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        # Validate required fields
+        if 'latitude' not in data or 'longitude' not in data:
+            self.send_error(400, "Missing latitude or longitude")
+            return
+
+        # Create geotag
+        geotag = GeoTag(
+            latitude=float(data['latitude']),
+            longitude=float(data['longitude']),
+            altitude=float(data['altitude']) if 'altitude' in data else None,
+            location_name=data.get('location_name'),
+            source='manual',
+            confidence=1.0,
+            updated_by='user'
+        )
+
+        # STEP 1: Write to EXIF (source of truth)
+        exif_success = write_gps_to_exif(photo_path, geotag)
+
+        if not exif_success:
+            self.send_error(500, "Failed to write GPS to image EXIF. Is piexif installed?")
+            return
+
+        # STEP 2: Store metadata in database (optional)
+        if geotag_db is not None:
+            photo_id = geotag_db.get_photo_id(filename)
+            if not photo_id:
+                exif_ts = extract_exif_timestamp(photo_path)
+                geotag_db.add_photo(filename, photo_path, exif_ts)
+            geotag_db.set_geotag_metadata(filename, geotag)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps({'status': 'ok', 'wrote_exif': True}).encode())
+
+    def serve_photos_geotags(self, parsed):
+        """GET /photos/geotags?status=all|complete|missing — list photos with geotag status"""
+        if geotag_db is None:
+            self.send_error(503, "Geotag database not available")
+            return
+
+        params = parse_qs(parsed.query)
+        status = params.get('status', ['all'])[0]
+
+        if status not in ['all', 'complete', 'missing']:
+            self.send_error(400, "Invalid status parameter")
+            return
+
+        photos = geotag_db.list_photos_by_status(status)
+
+        data = json.dumps({'photos': photos}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_geotag_import_exif(self):
+        """POST /photos/geotag/import-exif — import EXIF metadata for all photos
+
+        This doesn't modify image files - just indexes what's already there.
+        Stores photos in database with their timestamps for temporal clustering.
+        """
+        if geotag_db is None:
+            self.send_error(503, "Geotag database not available")
+            return
+
+        # Scan photo directory
+        photos = get_photos()
+        has_gps = 0
+        no_gps = 0
+        errors = 0
+
+        for photo_path in photos:
+            try:
+                filename = os.path.basename(photo_path)
+
+                # Add photo to database if not exists (with timestamp for clustering)
+                photo_id = geotag_db.get_photo_id(filename)
+                if not photo_id:
+                    exif_ts = extract_exif_timestamp(photo_path)
+                    geotag_db.add_photo(filename, photo_path, exif_ts)
+
+                # Check if it has GPS (but don't copy to DB - EXIF is the source)
+                geotag = extract_gps_from_exif(photo_path)
+                if geotag:
+                    has_gps += 1
+                else:
+                    no_gps += 1
+
+            except Exception as e:
+                print(f"Error processing {photo_path}: {e}")
+                errors += 1
+
+        response = {
+            'status': 'ok',
+            'indexed': len(photos),
+            'has_gps': has_gps,
+            'missing_gps': no_gps,
+            'errors': errors
+        }
+
+        data = json.dumps(response).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_geotag_auto_infer(self):
+        """POST /photos/geotag/auto-infer — infer geotags using temporal clustering"""
+        if geotag_db is None:
+            self.send_error(503, "Geotag database not available")
+            return
+
+        # Parse request body for options
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+
+        try:
+            options = json.loads(body)
+        except json.JSONDecodeError:
+            options = {}
+
+        time_window = options.get('time_window', 3600)  # 1 hour default
+
+        # Get all photos with geotags
+        photos_with_geotags = geotag_db.get_all_with_geotags()
+        geotag_map = {filename: geotag for filename, _, geotag in photos_with_geotags}
+
+        # Get photos without geotags
+        photos_without = geotag_db.get_photos_without_geotags()
+
+        # Cluster by time
+        clusters = cluster_photos_by_time(photos_without, time_window)
+
+        # Infer geotags for each cluster
+        all_inferences = []
+        for cluster in clusters:
+            inferences = infer_geotags_from_cluster(cluster, geotag_map)
+            all_inferences.extend(inferences)
+
+        # Return suggestions (don't auto-apply)
+        response = {
+            'status': 'ok',
+            'inferences': [
+                {
+                    'filename': inf['filename'],
+                    'geotag': inf['geotag'].to_dict(),
+                    'reason': inf['reason']
+                }
+                for inf in all_inferences
+            ]
+        }
+
+        data = json.dumps(response).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_geotag_batch_update(self):
+        """POST /photos/geotag/batch-update — apply geotag to multiple photos
+
+        Writes GPS to EXIF for each photo, then stores metadata in database.
+        """
+        from geotag_manager import write_gps_to_exif
+
+        # Parse request body
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        # Validate required fields
+        if 'filenames' not in data or 'geotag' not in data:
+            self.send_error(400, "Missing filenames or geotag")
+            return
+
+        filenames = data['filenames']
+        geotag_data = data['geotag']
+
+        if 'latitude' not in geotag_data or 'longitude' not in geotag_data:
+            self.send_error(400, "Missing latitude or longitude in geotag")
+            return
+
+        # Create geotag
+        geotag = GeoTag(
+            latitude=float(geotag_data['latitude']),
+            longitude=float(geotag_data['longitude']),
+            altitude=float(geotag_data['altitude']) if 'altitude' in geotag_data else None,
+            location_name=geotag_data.get('location_name'),
+            source=geotag_data.get('source', 'manual'),
+            confidence=float(geotag_data.get('confidence', 1.0)),
+            updated_by=geotag_data.get('updated_by', 'user')
+        )
+
+        # Apply to all photos
+        success_count = 0
+        error_count = 0
+
+        for filename in filenames:
+            photo_path = os.path.join(PHOTO_DIR, filename)
+            if not os.path.isfile(photo_path):
+                error_count += 1
+                continue
+
+            # STEP 1: Write to EXIF (source of truth)
+            if not write_gps_to_exif(photo_path, geotag):
+                error_count += 1
+                continue
+
+            # STEP 2: Store metadata in database (optional)
+            if geotag_db is not None:
+                photo_id = geotag_db.get_photo_id(filename)
+                if not photo_id:
+                    exif_ts = extract_exif_timestamp(photo_path)
+                    geotag_db.add_photo(filename, photo_path, exif_ts)
+                geotag_db.set_geotag_metadata(filename, geotag)
+
+            success_count += 1
+
+        response = {
+            'status': 'ok',
+            'updated': success_count,
+            'errors': error_count
+        }
+
+        data = json.dumps(response).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
 
 if __name__ == "__main__":
     _load_cameras()
@@ -2432,6 +2793,13 @@ if __name__ == "__main__":
     # Start the thumbnail generator
     thumb_gen = ThumbnailGenerator()
     thumb_gen.start()
+
+    # Initialize geotag database
+    try:
+        geotag_db = GeotagDatabase(GEOTAG_DB_PATH)
+        print(f"Geotag database initialized at {GEOTAG_DB_PATH}")
+    except Exception as e:
+        print(f"Warning: Failed to initialize geotag database: {e}")
 
     try:
         server.serve_forever()
