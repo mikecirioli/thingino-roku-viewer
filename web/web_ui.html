@@ -204,6 +204,9 @@
         #geotags-controls .control-row {
             margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
         }
+        #geotags-controls label {
+            font-size: 0.85em; min-width: 50px;
+        }
         #geotags-controls select, #geotags-controls input {
             flex: 1; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color);
             color: white; border-radius: 4px; font-size: 0.9em;
@@ -211,15 +214,36 @@
         #geotags-controls button {
             width: 100%; margin-top: 10px;
         }
+        #geotags-bulk-actions {
+            display: none; padding: 10px; background: rgba(255,103,0,0.2); border: 1px solid var(--accent-color);
+            border-radius: 6px; margin-top: 10px;
+        }
+        #geotags-bulk-actions.active {
+            display: block;
+        }
+        #geotags-bulk-actions h4 {
+            margin: 0 0 10px 0; font-size: 0.9em; color: var(--accent-color);
+        }
+        #geotags-bulk-count {
+            font-weight: bold;
+        }
         #geotags-grid {
             flex: 1 1 0; overflow-y: auto; padding: 10px; min-height: 0;
         }
         .geotag-photo-card {
             position: relative; margin-bottom: 15px; border-radius: 6px; overflow: hidden;
-            background: rgba(0,0,0,0.3); cursor: pointer; transition: transform 0.2s;
+            background: rgba(0,0,0,0.3); cursor: pointer; transition: all 0.2s;
         }
         .geotag-photo-card:hover {
             transform: scale(1.02);
+        }
+        .geotag-photo-card.selected {
+            outline: 3px solid var(--accent-color);
+            transform: scale(1.02);
+        }
+        .geotag-checkbox {
+            position: absolute; top: 8px; left: 8px; width: 20px; height: 20px;
+            cursor: pointer; z-index: 10; accent-color: var(--accent-color);
         }
         .geotag-photo-card img {
             width: 100%; height: 200px; object-fit: cover; display: block;
@@ -443,16 +467,39 @@
                     <div id="geotags-sidebar">
                         <div id="geotags-controls">
                             <h3>🌍 Geotag Manager</h3>
+
                             <div class="control-row">
+                                <label>Filter:</label>
                                 <select id="geotag-filter">
                                     <option value="all">All Photos</option>
                                     <option value="complete">Has GPS</option>
                                     <option value="missing">Missing GPS</option>
                                 </select>
                             </div>
+
+                            <div class="control-row">
+                                <label>Sort:</label>
+                                <select id="geotag-sort">
+                                    <option value="filename">Filename</option>
+                                    <option value="date">Date (newest first)</option>
+                                    <option value="date-asc">Date (oldest first)</option>
+                                    <option value="location">Location (lat)</option>
+                                </select>
+                            </div>
+
                             <div class="control-row">
                                 <input type="text" id="geotag-search" placeholder="Search filename...">
                             </div>
+
+                            <button class="btn" id="btn-select-all">☑️ Select All Visible</button>
+                            <button class="btn" id="btn-clear-selection">⬜ Clear Selection</button>
+
+                            <div id="geotags-bulk-actions">
+                                <h4>Bulk Actions (<span id="geotags-bulk-count">0</span> selected)</h4>
+                                <button class="btn" id="btn-bulk-map">📍 Click Map to Set Location</button>
+                                <button class="btn" id="btn-bulk-manual">✏️ Enter Coordinates</button>
+                            </div>
+
                             <button class="btn" id="btn-auto-infer">🔍 Auto-Infer Locations</button>
                             <button class="btn" id="btn-import-exif">📥 Import EXIF Data</button>
                         </div>
@@ -725,9 +772,16 @@
             geotagsMap: document.getElementById('geotags-map'),
             geotagMapLoading: document.getElementById('geotag-map-loading'),
             geotagFilter: document.getElementById('geotag-filter'),
+            geotagSort: document.getElementById('geotag-sort'),
             geotagSearch: document.getElementById('geotag-search'),
             btnAutoInfer: document.getElementById('btn-auto-infer'),
             btnImportExif: document.getElementById('btn-import-exif'),
+            btnSelectAll: document.getElementById('btn-select-all'),
+            btnClearSelection: document.getElementById('btn-clear-selection'),
+            btnBulkMap: document.getElementById('btn-bulk-map'),
+            btnBulkManual: document.getElementById('btn-bulk-manual'),
+            geotagsBulkActions: document.getElementById('geotags-bulk-actions'),
+            geotagsBulkCount: document.getElementById('geotags-bulk-count'),
             statComplete: document.getElementById('stat-complete'),
             statMissing: document.getElementById('stat-missing'),
             statSuggested: document.getElementById('stat-suggested'),
@@ -1839,7 +1893,10 @@
         let geotagMap = null;
         let geotagMarkers = null;
         let geotagPhotos = [];
+        let geotagFilteredPhotos = [];
+        let geotagSelectedFiles = new Set();
         let geotagSuggestions = [];
+        let geotagMapClickEnabled = false;
 
         async function initGeotags() {
             state.geotagsInitialized = true;
@@ -1862,11 +1919,24 @@
                 loadGeotagPhotos();
             }, 100);
 
+            // Map click handler for bulk location setting
+            geotagMap.on('click', (e) => {
+                if (geotagMapClickEnabled && geotagSelectedFiles.size > 0) {
+                    const { lat, lng } = e.latlng;
+                    bulkApplyLocation(lat, lng);
+                }
+            });
+
             // Event listeners
-            els.geotagFilter.addEventListener('change', filterGeotagPhotos);
-            els.geotagSearch.addEventListener('input', filterGeotagPhotos);
+            els.geotagFilter.addEventListener('change', filterAndSortPhotos);
+            els.geotagSort.addEventListener('change', filterAndSortPhotos);
+            els.geotagSearch.addEventListener('input', filterAndSortPhotos);
             els.btnAutoInfer.addEventListener('click', runAutoInference);
             els.btnImportExif.addEventListener('click', importExifData);
+            els.btnSelectAll.addEventListener('click', selectAllVisible);
+            els.btnClearSelection.addEventListener('click', clearSelection);
+            els.btnBulkMap.addEventListener('click', enableMapClickMode);
+            els.btnBulkManual.addEventListener('click', showManualEntryDialog);
         }
 
         async function loadGeotagPhotos(status = 'all') {
@@ -1898,6 +1968,7 @@
 
         function renderGeotagGrid(photos) {
             els.geotagsGrid.innerHTML = '';
+            geotagFilteredPhotos = photos;
 
             if (photos.length === 0) {
                 els.geotagsGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--accent-color);">No photos found</div>';
@@ -1907,9 +1978,23 @@
             photos.forEach(photo => {
                 const card = document.createElement('div');
                 card.className = 'geotag-photo-card';
+                card.dataset.filename = photo.filename;
+
+                if (geotagSelectedFiles.has(photo.filename)) {
+                    card.classList.add('selected');
+                }
 
                 const hasGPS = photo.geotag && photo.geotag.latitude;
                 const badge = hasGPS ? 'has-gps">● GPS' : 'no-gps">● No GPS';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'geotag-checkbox';
+                checkbox.checked = geotagSelectedFiles.has(photo.filename);
+                checkbox.onclick = (e) => {
+                    e.stopPropagation();
+                    togglePhotoSelection(photo.filename);
+                };
 
                 card.innerHTML = `
                     <img src="/library/thumb?path=${encodeURIComponent(photo.filename)}"
@@ -1923,14 +2008,19 @@
                     </div>
                 `;
 
-                card.onclick = () => {
-                    if (hasGPS) {
+                card.insertBefore(checkbox, card.firstChild);
+
+                card.onclick = (e) => {
+                    if (e.target === checkbox) return;
+                    if (hasGPS && !geotagMapClickEnabled) {
                         geotagMap.setView([photo.geotag.latitude, photo.geotag.longitude], 12);
                     }
                 };
 
                 els.geotagsGrid.appendChild(card);
             });
+
+            updateBulkActionsUI();
         }
 
         function updateGeotagMap() {
@@ -1958,11 +2048,12 @@
             });
         }
 
-        function filterGeotagPhotos() {
+        function filterAndSortPhotos() {
             const status = els.geotagFilter.value;
+            const sort = els.geotagSort.value;
             const search = els.geotagSearch.value.toLowerCase();
 
-            let filtered = geotagPhotos;
+            let filtered = [...geotagPhotos];
 
             // Filter by status
             if (status === 'complete') {
@@ -1976,7 +2067,170 @@
                 filtered = filtered.filter(p => p.filename.toLowerCase().includes(search));
             }
 
+            // Sort
+            if (sort === 'filename') {
+                filtered.sort((a, b) => a.filename.localeCompare(b.filename));
+            } else if (sort === 'date') {
+                filtered.sort((a, b) => {
+                    const aDate = a.exif_timestamp || 0;
+                    const bDate = b.exif_timestamp || 0;
+                    return bDate - aDate; // Newest first
+                });
+            } else if (sort === 'date-asc') {
+                filtered.sort((a, b) => {
+                    const aDate = a.exif_timestamp || 0;
+                    const bDate = b.exif_timestamp || 0;
+                    return aDate - bDate; // Oldest first
+                });
+            } else if (sort === 'location') {
+                filtered.sort((a, b) => {
+                    const aLat = a.geotag?.latitude || 999;
+                    const bLat = b.geotag?.latitude || 999;
+                    return bLat - aLat;
+                });
+            }
+
             renderGeotagGrid(filtered);
+        }
+
+        function togglePhotoSelection(filename) {
+            if (geotagSelectedFiles.has(filename)) {
+                geotagSelectedFiles.delete(filename);
+            } else {
+                geotagSelectedFiles.add(filename);
+            }
+
+            // Update card visual
+            const card = document.querySelector(`[data-filename="${filename}"]`);
+            if (card) {
+                card.classList.toggle('selected', geotagSelectedFiles.has(filename));
+                const checkbox = card.querySelector('.geotag-checkbox');
+                if (checkbox) checkbox.checked = geotagSelectedFiles.has(filename);
+            }
+
+            updateBulkActionsUI();
+        }
+
+        function selectAllVisible() {
+            geotagFilteredPhotos.forEach(photo => {
+                geotagSelectedFiles.add(photo.filename);
+            });
+            renderGeotagGrid(geotagFilteredPhotos);
+        }
+
+        function clearSelection() {
+            geotagSelectedFiles.clear();
+            geotagMapClickEnabled = false;
+            renderGeotagGrid(geotagFilteredPhotos);
+            updateBulkActionsUI();
+        }
+
+        function updateBulkActionsUI() {
+            const count = geotagSelectedFiles.size;
+            els.geotagsBulkCount.textContent = count;
+
+            if (count > 0) {
+                els.geotagsBulkActions.classList.add('active');
+            } else {
+                els.geotagsBulkActions.classList.remove('active');
+                geotagMapClickEnabled = false;
+            }
+
+            // Update button state
+            if (geotagMapClickEnabled) {
+                els.btnBulkMap.textContent = '🎯 Click Map Now! (Click again to cancel)';
+                els.btnBulkMap.style.background = 'var(--accent-color)';
+                document.body.style.cursor = 'crosshair';
+            } else {
+                els.btnBulkMap.textContent = '📍 Click Map to Set Location';
+                els.btnBulkMap.style.background = '';
+                document.body.style.cursor = '';
+            }
+        }
+
+        function enableMapClickMode() {
+            if (geotagSelectedFiles.size === 0) {
+                alert('Please select photos first!');
+                return;
+            }
+
+            geotagMapClickEnabled = !geotagMapClickEnabled;
+            updateBulkActionsUI();
+
+            if (geotagMapClickEnabled) {
+                alert(`Click anywhere on the map to set location for ${geotagSelectedFiles.size} selected photo(s).`);
+            }
+        }
+
+        async function bulkApplyLocation(lat, lng) {
+            if (!confirm(`Apply location ${lat.toFixed(6)}, ${lng.toFixed(6)} to ${geotagSelectedFiles.size} photo(s)?\n\nThis will write GPS data to the image files.`)) {
+                geotagMapClickEnabled = false;
+                updateBulkActionsUI();
+                return;
+            }
+
+            els.btnBulkMap.disabled = true;
+            els.btnBulkMap.textContent = '⏳ Applying...';
+
+            try {
+                const response = await fetch('/photos/geotag/batch-update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        filenames: Array.from(geotagSelectedFiles),
+                        geotag: {
+                            latitude: lat,
+                            longitude: lng,
+                            source: 'manual',
+                            updated_by: 'user'
+                        }
+                    })
+                });
+
+                const data = await response.json();
+
+                alert(`Success!\n\nUpdated: ${data.updated} photos\nErrors: ${data.errors}`);
+
+                // Clear selection and reload
+                geotagSelectedFiles.clear();
+                geotagMapClickEnabled = false;
+                await loadGeotagPhotos();
+
+            } catch (error) {
+                console.error('Bulk update failed:', error);
+                alert('Failed to apply geotags. Check server logs.');
+            } finally {
+                els.btnBulkMap.disabled = false;
+                updateBulkActionsUI();
+            }
+        }
+
+        function showManualEntryDialog() {
+            if (geotagSelectedFiles.size === 0) {
+                alert('Please select photos first!');
+                return;
+            }
+
+            const lat = prompt(`Enter latitude for ${geotagSelectedFiles.size} photo(s):\n\nExample: 35.7796`);
+            if (!lat) return;
+
+            const lng = prompt(`Enter longitude:\n\nExample: -78.6382`);
+            if (!lng) return;
+
+            const latitude = parseFloat(lat);
+            const longitude = parseFloat(lng);
+
+            if (isNaN(latitude) || isNaN(longitude)) {
+                alert('Invalid coordinates!');
+                return;
+            }
+
+            if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+                alert('Coordinates out of range!\nLatitude: -90 to 90\nLongitude: -180 to 180');
+                return;
+            }
+
+            bulkApplyLocation(latitude, longitude);
         }
 
         async function runAutoInference() {

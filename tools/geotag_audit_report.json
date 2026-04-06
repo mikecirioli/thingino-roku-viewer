@@ -1,0 +1,85 @@
+{
+  "directory": "/export/ciriolisaver",
+  "stats": {
+    "total_images": 1434,
+    "has_complete_gps": 942,
+    "has_incomplete_gps": 13,
+    "has_no_gps": 479,
+    "has_error": 0,
+    "pillow_unavailable": false
+  },
+  "samples": {
+    "complete": [
+      {
+        "file": "185BD699-0DD1-49CA-98D4-3C2F378429AE.jpg",
+        "lat": 35.78850833333333,
+        "lon": -78.8730861111111
+      },
+      {
+        "file": "71AFD5B6-3BEF-4761-B1F4-7096D065EB94.jpg",
+        "lat": 34.10178055555556,
+        "lon": -118.34148333333333
+      },
+      {
+        "file": "79399EB0-0A32-45C3-B4C9-F592ACD5662D.jpg",
+        "lat": 35.80106111111111,
+        "lon": -78.88368333333334
+      },
+      {
+        "file": "AC9F3A54-8229-4E89-A704-F74444E42757.jpg",
+        "lat": 35.867275,
+        "lon": -78.84632777777777
+      },
+      {
+        "file": "B36B6BD1-6B2A-4228-86A4-FD7324B4F2A5.jpg",
+        "lat": 27.273783333333334,
+        "lon": -82.56788611111111
+      }
+    ],
+    "incomplete": [
+      {
+        "file": "IMG_20150125_181042087_TOP.jpg",
+        "fields": [
+          "GPSVersionID",
+          "GPSMapDatum"
+        ]
+      },
+      {
+        "file": "IMG_20150125_221903675.jpg",
+        "fields": [
+          "GPSVersionID",
+          "GPSMapDatum"
+        ]
+      },
+      {
+        "file": "IMG_20150125_223108306.jpg",
+        "fields": [
+          "GPSVersionID",
+          "GPSMapDatum"
+        ]
+      },
+      {
+        "file": "IMG_20150126_031118623.jpg",
+        "fields": [
+          "GPSVersionID",
+          "GPSMapDatum"
+        ]
+      },
+      {
+        "file": "IMG_20150126_171350953.jpg",
+        "fields": [
+          "GPSVersionID",
+          "GPSMapDatum"
+        ]
+      }
+    ],
+    "missing": [
+      "01910_G.jpg",
+      "10348440_10203961986802987_7892557044042546695_n.jpg",
+      "10437608_10203961986002967_4494169389548640069_n.jpg",
+      "10458320_10203914959427332_7374609836001488537_n.jpg",
+      "10491199_10203961986442978_7467583661735467503_n.jpg"
+    ],
+    "errors": []
+  }
+}
