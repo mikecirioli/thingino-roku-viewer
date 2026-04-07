@@ -186,10 +186,16 @@
 
         /* Geotags View */
         #geotags-view {
-            display: none; flex: 1 1 0; min-height: 0; overflow: hidden;
+            flex: 1 1 0;
+            min-height: 0;
+            display: none;
+            overflow: hidden;
         }
         #geotags-container {
-            display: flex; height: 100%; overflow: hidden;
+            display: flex;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
         }
         #geotags-sidebar {
             width: 350px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color);
@@ -845,8 +851,13 @@
             renderSidebar();
             cleanupPlayer();
 
-            if (tab === 'geotags' && !state.geotagsInitialized) {
-                initGeotags();
+            if (tab === 'geotags') {
+                if (!state.geotagsInitialized) {
+                    initGeotags();
+                } else if (geotagMap) {
+                    // Force map to recalculate size when tab becomes visible
+                    setTimeout(() => geotagMap.invalidateSize(), 100);
+                }
             }
 
             if (tab === 'live') {
