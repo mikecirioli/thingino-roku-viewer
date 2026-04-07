@@ -269,10 +269,10 @@
             color: #ffeb3b;
         }
         #geotags-map-container {
-            flex: 1 1 0; position: relative; min-width: 0;
+            flex: 1 1 0; position: relative; min-width: 0; min-height: 400px;
         }
         #geotags-map {
-            width: 100%; height: 100%;
+            width: 100%; height: 100%; min-height: 400px;
         }
         .geotag-map-loading {
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -497,6 +497,10 @@
                             <div id="geotags-bulk-actions">
                                 <h4>Bulk Actions (<span id="geotags-bulk-count">0</span> selected)</h4>
                                 <button class="btn" id="btn-bulk-map">📍 Click Map to Set Location</button>
+                                <div class="control-row">
+                                    <input type="text" id="location-search" placeholder="e.g. Woodstock, VA">
+                                    <button class="btn" id="btn-search-location">🔍 Search</button>
+                                </div>
                                 <button class="btn" id="btn-bulk-manual">✏️ Enter Coordinates</button>
                             </div>
 
@@ -780,6 +784,8 @@
             btnClearSelection: document.getElementById('btn-clear-selection'),
             btnBulkMap: document.getElementById('btn-bulk-map'),
             btnBulkManual: document.getElementById('btn-bulk-manual'),
+            locationSearch: document.getElementById('location-search'),
+            btnSearchLocation: document.getElementById('btn-search-location'),
             geotagsBulkActions: document.getElementById('geotags-bulk-actions'),
             geotagsBulkCount: document.getElementById('geotags-bulk-count'),
             statComplete: document.getElementById('stat-complete'),
@@ -1910,6 +1916,7 @@
             els.btnSelectAll.addEventListener('click', selectAllVisible);
             els.btnClearSelection.addEventListener('click', clearSelection);
             els.btnBulkMap.addEventListener('click', enableMapClickMode);
+            els.btnSearchLocation.addEventListener('click', searchLocation);
             els.btnBulkManual.addEventListener('click', showManualEntryDialog);
 
             // Initialize Leaflet map
@@ -2244,6 +2251,57 @@
             }
 
             bulkApplyLocation(latitude, longitude);
+        }
+
+        async function searchLocation() {
+            if (geotagSelectedFiles.size === 0) {
+                alert('Please select photos first!');
+                return;
+            }
+
+            const query = els.locationSearch.value.trim();
+            if (!query) {
+                alert('Please enter a location to search!');
+                return;
+            }
+
+            els.btnSearchLocation.disabled = true;
+            els.btnSearchLocation.textContent = '🔍 Searching...';
+
+            try {
+                // Use Nominatim geocoding API (OpenStreetMap)
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+                    headers: {
+                        'User-Agent': '3-Bad-Dogs Photo Frame'
+                    }
+                });
+
+                const results = await response.json();
+
+                if (results.length === 0) {
+                    alert(`No results found for "${query}".\n\nTry:\n• Adding state/country (e.g., "Woodstock, VA, USA")\n• Using a nearby city name\n• Checking spelling`);
+                    return;
+                }
+
+                const result = results[0];
+                const latitude = parseFloat(result.lat);
+                const longitude = parseFloat(result.lon);
+
+                // Show confirmation with location name
+                if (confirm(`Found: ${result.display_name}\n\nLatitude: ${latitude.toFixed(6)}\nLongitude: ${longitude.toFixed(6)}\n\nApply to ${geotagSelectedFiles.size} photo(s)?`)) {
+                    // Clear the search input
+                    els.locationSearch.value = '';
+                    // Apply the location
+                    await bulkApplyLocation(latitude, longitude);
+                }
+
+            } catch (error) {
+                console.error('Geocoding failed:', error);
+                alert('Failed to search location. Check internet connection.');
+            } finally {
+                els.btnSearchLocation.disabled = false;
+                els.btnSearchLocation.textContent = '🔍 Search';
+            }
         }
 
         async function runAutoInference() {
