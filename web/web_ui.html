@@ -1946,13 +1946,8 @@
 
                 geotagPhotos = data.photos;
 
-                // Update stats
-                const complete = geotagPhotos.filter(p => p.geotag).length;
-                const missing = geotagPhotos.filter(p => !p.geotag).length;
-
-                els.statComplete.textContent = complete;
-                els.statMissing.textContent = missing;
-                els.statSuggested.textContent = geotagSuggestions.length;
+                // Update stats - always show totals regardless of filter
+                await updateGeotagStats();
 
                 // Render grid
                 renderGeotagGrid(geotagPhotos);
@@ -1963,6 +1958,24 @@
             } catch (error) {
                 console.error('Failed to load photos:', error);
                 els.geotagsGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #f44336;">Failed to load photos. Is the server running?</div>';
+            }
+        }
+
+        async function updateGeotagStats() {
+            try {
+                const [completeResp, missingResp] = await Promise.all([
+                    fetch('/photos/geotags?status=complete'),
+                    fetch('/photos/geotags?status=missing')
+                ]);
+
+                const completeData = await completeResp.json();
+                const missingData = await missingResp.json();
+
+                els.statComplete.textContent = completeData.photos.length;
+                els.statMissing.textContent = missingData.photos.length;
+                els.statSuggested.textContent = geotagSuggestions.length;
+            } catch (error) {
+                console.error('Failed to update stats:', error);
             }
         }
 
@@ -1997,7 +2010,7 @@
                 };
 
                 card.innerHTML = `
-                    <img src="/library/thumb?path=${encodeURIComponent(photo.filename)}"
+                    <img src="/library/thumb?file=${encodeURIComponent(photo.filename)}"
                          alt="${photo.filename}"
                          onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect width=%22200%22 height=%22200%22 fill=%22%23333%22/><text x=%2250%%22 y=%2250%%22 fill=%22white%22 text-anchor=%22middle%22>No Image</text></svg>'">
                     <div class="geotag-status-badge ${badge}</div>
@@ -2036,7 +2049,7 @@
 
                     marker.bindPopup(`
                         <div style="min-width: 150px;">
-                            <img src="/library/thumb?path=${encodeURIComponent(photo.filename)}"
+                            <img src="/library/thumb?file=${encodeURIComponent(photo.filename)}"
                                  style="width: 150px; height: 150px; object-fit: cover; margin-bottom: 8px;">
                             <div style="font-size: 0.9em; font-weight: bold;">${photo.filename}</div>
                             ${photo.geotag.location_name ? `<div style="font-size: 0.8em; color: #666; margin-top: 4px;">${photo.geotag.location_name}</div>` : ''}
