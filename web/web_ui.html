@@ -1901,6 +1901,17 @@
         async function initGeotags() {
             state.geotagsInitialized = true;
 
+            // Event listeners for controls (can be set immediately)
+            els.geotagFilter.addEventListener('change', filterAndSortPhotos);
+            els.geotagSort.addEventListener('change', filterAndSortPhotos);
+            els.geotagSearch.addEventListener('input', filterAndSortPhotos);
+            els.btnAutoInfer.addEventListener('click', runAutoInference);
+            els.btnImportExif.addEventListener('click', importExifData);
+            els.btnSelectAll.addEventListener('click', selectAllVisible);
+            els.btnClearSelection.addEventListener('click', clearSelection);
+            els.btnBulkMap.addEventListener('click', enableMapClickMode);
+            els.btnBulkManual.addEventListener('click', showManualEntryDialog);
+
             // Initialize Leaflet map
             setTimeout(() => {
                 geotagMap = L.map(els.geotagsMap).setView([35.7796, -78.6382], 4);
@@ -1913,30 +1924,19 @@
                 geotagMarkers = L.markerClusterGroup();
                 geotagMap.addLayer(geotagMarkers);
 
+                // Map click handler for bulk location setting (after map is created)
+                geotagMap.on('click', (e) => {
+                    if (geotagMapClickEnabled && geotagSelectedFiles.size > 0) {
+                        const { lat, lng } = e.latlng;
+                        bulkApplyLocation(lat, lng);
+                    }
+                });
+
                 els.geotagMapLoading.style.display = 'none';
 
                 // Load photos
                 loadGeotagPhotos();
             }, 100);
-
-            // Map click handler for bulk location setting
-            geotagMap.on('click', (e) => {
-                if (geotagMapClickEnabled && geotagSelectedFiles.size > 0) {
-                    const { lat, lng } = e.latlng;
-                    bulkApplyLocation(lat, lng);
-                }
-            });
-
-            // Event listeners
-            els.geotagFilter.addEventListener('change', filterAndSortPhotos);
-            els.geotagSort.addEventListener('change', filterAndSortPhotos);
-            els.geotagSearch.addEventListener('input', filterAndSortPhotos);
-            els.btnAutoInfer.addEventListener('click', runAutoInference);
-            els.btnImportExif.addEventListener('click', importExifData);
-            els.btnSelectAll.addEventListener('click', selectAllVisible);
-            els.btnClearSelection.addEventListener('click', clearSelection);
-            els.btnBulkMap.addEventListener('click', enableMapClickMode);
-            els.btnBulkManual.addEventListener('click', showManualEntryDialog);
         }
 
         async function loadGeotagPhotos(status = 'all') {
