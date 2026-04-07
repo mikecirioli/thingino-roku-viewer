@@ -1921,29 +1921,46 @@
 
             // Initialize Leaflet map
             setTimeout(() => {
-                geotagMap = L.map(els.geotagsMap).setView([35.7796, -78.6382], 4);
+                try {
+                    console.log('Initializing Leaflet map...');
 
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap contributors'
-                }).addTo(geotagMap);
+                    geotagMap = L.map(els.geotagsMap, {
+                        preferCanvas: true
+                    }).setView([35.7796, -78.6382], 4);
 
-                // Initialize marker cluster group
-                geotagMarkers = L.markerClusterGroup();
-                geotagMap.addLayer(geotagMarkers);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors',
+                        maxZoom: 19
+                    }).addTo(geotagMap);
 
-                // Map click handler for bulk location setting (after map is created)
-                geotagMap.on('click', (e) => {
-                    if (geotagMapClickEnabled && geotagSelectedFiles.size > 0) {
-                        const { lat, lng } = e.latlng;
-                        bulkApplyLocation(lat, lng);
-                    }
-                });
+                    // Initialize marker cluster group
+                    geotagMarkers = L.markerClusterGroup();
+                    geotagMap.addLayer(geotagMarkers);
 
-                els.geotagMapLoading.style.display = 'none';
+                    // Map click handler for bulk location setting (after map is created)
+                    geotagMap.on('click', (e) => {
+                        if (geotagMapClickEnabled && geotagSelectedFiles.size > 0) {
+                            const { lat, lng } = e.latlng;
+                            bulkApplyLocation(lat, lng);
+                        }
+                    });
 
-                // Load photos
-                loadGeotagPhotos();
-            }, 100);
+                    els.geotagMapLoading.style.display = 'none';
+
+                    // Force map to recalculate size
+                    setTimeout(() => {
+                        geotagMap.invalidateSize();
+                        console.log('Map initialized successfully');
+                    }, 250);
+
+                    // Load photos
+                    loadGeotagPhotos();
+                } catch (error) {
+                    console.error('Failed to initialize map:', error);
+                    els.geotagMapLoading.textContent = 'Failed to load map: ' + error.message;
+                    els.geotagMapLoading.style.background = 'rgba(255,0,0,0.3)';
+                }
+            }, 300);
         }
 
         async function loadGeotagPhotos(status = 'all') {
