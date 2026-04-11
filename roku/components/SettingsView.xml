@@ -8,97 +8,149 @@
   <children>
     <Rectangle width="1920" height="1080" color="#1a1a2e" />
 
-    <LayoutGroup translation="[100,60]" layoutDirection="horiz" itemSpacings="[100]">
-      <!-- Left Column -->
-      <LayoutGroup layoutDirection="vert" itemSpacings="[16]">
-        <Label id="title" text="3 Bad Dogs Settings" color="#FFFFFF" />
+    <!-- Page indicator -->
+    <Label id="pageLabel" text="Page 1 of 2" color="#666666"
+           translation="[1700, 30]" horizAlign="right" width="180">
+      <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
+    </Label>
 
-        <!-- Server URL -->
-        <Label text="Server URL:" color="#AAAAAA">
-          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-        </Label>
-        <Group>
-          <Rectangle id="urlBg" width="700" height="44" color="#FFFFFF15" />
-          <Label id="urlLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+    <!-- PAGE 1: Connection & Screensaver Mode -->
+    <Group id="page1" visible="true">
+      <LayoutGroup translation="[100,60]" layoutDirection="horiz" itemSpacings="[100]">
+        <!-- Left Column -->
+        <LayoutGroup layoutDirection="vert" itemSpacings="[16]">
+          <Label id="title" text="3 Bad Dogs Settings" color="#FFFFFF" />
+
+          <!-- Server URL -->
+          <Label text="Server URL:" color="#AAAAAA">
             <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
           </Label>
-        </Group>
-        <Button id="editUrlBtn" text="Edit Server URL" focusable="true" />
+          <Group>
+            <Rectangle id="urlBg" width="700" height="44" color="#FFFFFF15" />
+            <Label id="urlLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+              <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+            </Label>
+          </Group>
+          <Button id="editUrlBtn" text="Edit Server URL" focusable="true" />
+
+          <Rectangle width="700" height="1" color="#FFFFFF33" />
+
+          <!-- Username -->
+          <Label text="Username (optional):" color="#AAAAAA">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+          <Group>
+            <Rectangle id="userBg" width="700" height="44" color="#FFFFFF15" />
+            <Label id="userLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+              <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+            </Label>
+          </Group>
+          <Button id="editUserBtn" text="Edit Username" focusable="true" />
+
+          <!-- Password -->
+          <Label text="Password (optional):" color="#AAAAAA">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+          <Group>
+            <Rectangle id="passBg" width="700" height="44" color="#FFFFFF15" />
+            <Label id="passLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+              <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+            </Label>
+          </Group>
+          <Button id="editPassBtn" text="Edit Password" focusable="true" />
+
+          <Button id="nextPageBtn1" text="Clock Settings  >" focusable="true" />
+
+          <Label id="hint1" text="OK = select / edit    Back = save and exit"
+                 color="#666666">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
+          </Label>
+        </LayoutGroup>
+
+        <!-- Right Column -->
+        <LayoutGroup layoutDirection="vert" itemSpacings="[16]" translation="[0, 60]">
+          <!-- Screensaver mode -->
+          <Label text="Screensaver Mode:" color="#AAAAAA">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+          <RadioButtonList id="modeList" focusable="true">
+            <ContentNode role="content">
+              <ContentNode title="Photo Frame - random photos with crossfade" />
+              <ContentNode title="Camera - cycle all cameras" />
+            </ContentNode>
+          </RadioButtonList>
+
+          <Label id="loading" text="Loading cameras..." color="#666666" visible="false" />
+
+          <Rectangle width="700" height="1" color="#FFFFFF33" />
+
+          <!-- Timing -->
+          <Label text="Photo Interval:" color="#AAAAAA">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+          <RadioButtonList id="photoIntervalList" focusable="true">
+            <ContentNode role="content">
+              <ContentNode title="15 seconds" />
+              <ContentNode title="30 seconds" />
+              <ContentNode title="60 seconds" />
+              <ContentNode title="120 seconds" />
+            </ContentNode>
+          </RadioButtonList>
+
+          <Label text="Camera Cycle Interval:" color="#AAAAAA">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+          <RadioButtonList id="cycleIntervalList" focusable="true">
+            <ContentNode role="content">
+              <ContentNode title="3 seconds" />
+              <ContentNode title="5 seconds" />
+              <ContentNode title="10 seconds" />
+              <ContentNode title="15 seconds" />
+            </ContentNode>
+          </RadioButtonList>
+        </LayoutGroup>
+      </LayoutGroup>
+    </Group>
+
+    <!-- PAGE 2: Clock Settings -->
+    <Group id="page2" visible="false">
+      <LayoutGroup translation="[200,60]" layoutDirection="vert" itemSpacings="[16]">
+        <Label text="Clock Settings" color="#FFFFFF" />
+
+        <!-- Clock Style -->
+        <Label text="Clock Style:" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <RadioButtonList id="clockStyleList" focusable="true">
+          <ContentNode role="content">
+            <ContentNode title="Bounce (DVD-style)" />
+            <ContentNode title="Fade (appear/disappear)" />
+          </ContentNode>
+        </RadioButtonList>
 
         <Rectangle width="700" height="1" color="#FFFFFF33" />
 
-        <!-- Username -->
-        <Label text="Username (optional):" color="#AAAAAA">
+        <!-- Clock Transparency -->
+        <Label text="Clock Transparency:" color="#AAAAAA">
           <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
         </Label>
-        <Group>
-          <Rectangle id="userBg" width="700" height="44" color="#FFFFFF15" />
-          <Label id="userLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
-            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-          </Label>
-        </Group>
-        <Button id="editUserBtn" text="Edit Username" focusable="true" />
+        <RadioButtonList id="clockOpacityList" focusable="true">
+          <ContentNode role="content">
+            <ContentNode title="Solid (no transparency)" />
+            <ContentNode title="40% transparent (default)" />
+            <ContentNode title="60% transparent" />
+            <ContentNode title="80% transparent" />
+          </ContentNode>
+        </RadioButtonList>
 
-        <!-- Password -->
-        <Label text="Password (optional):" color="#AAAAAA">
-          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-        </Label>
-        <Group>
-          <Rectangle id="passBg" width="700" height="44" color="#FFFFFF15" />
-          <Label id="passLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
-            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-          </Label>
-        </Group>
-        <Button id="editPassBtn" text="Edit Password" focusable="true" />
-        
-        <Label id="hint" text="OK = select / edit    Back = save and exit" color="#666666" translation="[0, 50]">
+        <Button id="prevPageBtn2" text="<  Back to Settings" focusable="true" />
+
+        <Label id="hint2" text="OK = select    Left/Right = switch fields    Back = previous page"
+               color="#666666">
           <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="16" />
         </Label>
       </LayoutGroup>
-
-      <!-- Right Column -->
-      <LayoutGroup layoutDirection="vert" itemSpacings="[16]" translation="[0, 60]">
-        <!-- Screensaver mode -->
-        <Label text="Screensaver Mode:" color="#AAAAAA">
-          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-        </Label>
-        <RadioButtonList id="modeList" focusable="true">
-          <ContentNode role="content">
-            <ContentNode title="Photo Frame - random photos with crossfade" />
-            <ContentNode title="Camera - cycle all cameras" />
-          </ContentNode>
-        </RadioButtonList>
-
-        <Label id="loading" text="Loading cameras..." color="#666666" visible="false" />
-
-        <Rectangle width="700" height="1" color="#FFFFFF33" />
-
-        <!-- Timing -->
-        <Label text="Photo Interval:" color="#AAAAAA">
-          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-        </Label>
-        <RadioButtonList id="photoIntervalList" focusable="true">
-          <ContentNode role="content">
-            <ContentNode title="15 seconds" />
-            <ContentNode title="30 seconds" />
-            <ContentNode title="60 seconds" />
-            <ContentNode title="120 seconds" />
-          </ContentNode>
-        </RadioButtonList>
-
-        <Label text="Camera Cycle Interval:" color="#AAAAAA">
-          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-        </Label>
-        <RadioButtonList id="cycleIntervalList" focusable="true">
-          <ContentNode role="content">
-            <ContentNode title="3 seconds" />
-            <ContentNode title="5 seconds" />
-            <ContentNode title="10 seconds" />
-            <ContentNode title="15 seconds" />
-          </ContentNode>
-        </RadioButtonList>
-      </LayoutGroup>
-    </LayoutGroup>
+    </Group>
 
     <!-- Keyboard dialog (created dynamically) -->
   </children>

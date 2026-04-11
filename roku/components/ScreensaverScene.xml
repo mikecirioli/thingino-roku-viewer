@@ -52,6 +52,16 @@
                               fieldToInterp="photoB.opacity" />
     </Animation>
 
+    <!-- Overlay fade animations (for "fade" clock style) -->
+    <Animation id="overlayFadeIn" duration="2.5" repeat="false" easeFunction="inOutCubic">
+      <FloatFieldInterpolator id="overlayFadeInInterp" key="[0.0, 1.0]"
+                              keyValue="[0.0, 0.6]" fieldToInterp="overlay.opacity" />
+    </Animation>
+    <Animation id="overlayFadeOut" duration="2.5" repeat="false" easeFunction="inOutCubic">
+      <FloatFieldInterpolator id="overlayFadeOutInterp" key="[0.0, 1.0]"
+                              keyValue="[0.6, 0.0]" fieldToInterp="overlay.opacity" />
+    </Animation>
+
     <!-- Timers -->
     <Timer id="photoTimer" repeat="true" duration="30" />
     <Timer id="preloadTimer" repeat="false" duration="25" />
@@ -59,6 +69,8 @@
     <Timer id="dataTimer" repeat="true" duration="120" />
     <Timer id="bounceTimer" repeat="true" duration="1" />
     <Timer id="animationDelayTimer" repeat="false" duration="0.01" />
+    <Timer id="fadeCycleTimer" repeat="false" duration="10" />
+    <Timer id="fadeStableTimer" repeat="false" duration="3" />
   </children>
 
   <script type="text/brightscript" uri="ScreensaverScene.brs" />

@@ -58,6 +58,17 @@ sub init()
     dataSec = sec.Read("dataInterval")
     if dataSec <> "" then m.DATA_SEC = val(dataSec) else m.DATA_SEC = 120
 
+    ' Clock style: "bounce" (default) or "fade"
+    m.clockStyle = sec.Read("clockStyle")
+    if m.clockStyle <> "fade" then m.clockStyle = "bounce"
+
+    ' Clock opacity: 0 = fully opaque, 99 = nearly invisible. Default 40.
+    opacityStr = sec.Read("clockOpacity")
+    if opacityStr <> "" then m.clockOpacity = val(opacityStr) else m.clockOpacity = 40
+    if m.clockOpacity < 0 then m.clockOpacity = 0
+    if m.clockOpacity > 99 then m.clockOpacity = 99
+    m.overlayMaxOpacity = (100 - m.clockOpacity) / 100.0
+
     ' Camera selection
     m.cameraName = "front-door"
     savedCamera = sec.Read("camera")
@@ -86,6 +97,20 @@ sub init()
     m.fadeOutA = m.top.findNode("fadeOutA")
     m.fadeInB  = m.top.findNode("fadeInB")
     m.fadeOutB = m.top.findNode("fadeOutB")
+
+    ' Overlay fade animation refs
+    m.overlayFadeIn = m.top.findNode("overlayFadeIn")
+    m.overlayFadeOut = m.top.findNode("overlayFadeOut")
+    m.overlayFadeInInterp = m.top.findNode("overlayFadeInInterp")
+    m.overlayFadeOutInterp = m.top.findNode("overlayFadeOutInterp")
+
+    ' Set fade animation keyValues based on configured opacity
+    m.overlayFadeInInterp.keyValue = [0.0, m.overlayMaxOpacity]
+    m.overlayFadeOutInterp.keyValue = [m.overlayMaxOpacity, 0.0]
+
+    ' Observe fade animation completion
+    m.overlayFadeIn.observeField("state", "onOverlayFadeInDone")
+    m.overlayFadeOut.observeField("state", "onOverlayFadeOutDone")
 
     ' Bounce state
     m.bx = 100.0 : m.by = 100.0
@@ -125,10 +150,24 @@ sub init()
     
     m.bounceTimer = m.top.findNode("bounceTimer")
     m.bounceTimer.observeField("fire", "onBounce")
-    m.bounceTimer.control = "start"
 
     m.animationDelayTimer = m.top.findNode("animationDelayTimer")
     m.animationDelayTimer.observeField("fire", "onStartAnimation")
+
+    m.fadeCycleTimer = m.top.findNode("fadeCycleTimer")
+    m.fadeCycleTimer.observeField("fire", "onFadeCycleTimer")
+
+    m.fadeStableTimer = m.top.findNode("fadeStableTimer")
+    m.fadeStableTimer.observeField("fire", "onFadeStableTimer")
+
+    ' Apply overlay opacity and start appropriate clock style
+    if m.clockStyle = "fade"
+        m.overlay.opacity = 0.0
+        startFadeCycle()
+    else
+        m.overlay.opacity = m.overlayMaxOpacity
+        m.bounceTimer.control = "start"
+    end if
     
     ' Camera mode setup
     if m.mode = "camera"
@@ -366,4 +405,47 @@ sub onBounce()
     if m.by > maxY then m.by = maxY
 
     m.overlay.translation = [m.bx, m.by]
+end sub
+
+' -- Fade-style clock overlay --
+
+sub startFadeCycle()
+    ' Pick a random position within screen bounds
+    rangeX = 1920 - m.overlayW - 80
+    rangeY = 1080 - m.overlayH - 80
+    if rangeX < 1 then rangeX = 1
+    if rangeY < 1 then rangeY = 1
+    m.bx = 40.0 + Rnd(rangeX)
+    m.by = 40.0 + Rnd(rangeY)
+    m.overlay.translation = [m.bx, m.by]
+
+    ' Update clock text before fading in
+    updateClock()
+
+    ' Start fade in
+    m.overlayFadeIn.control = "start"
+end sub
+
+sub onOverlayFadeInDone(event as object)
+    if event.getData() = "stopped"
+        ' Fade in complete - hold stable for 3 seconds
+        m.fadeStableTimer.control = "start"
+    end if
+end sub
+
+sub onFadeStableTimer()
+    ' Stable display period over - start fade out
+    m.overlayFadeOut.control = "start"
+end sub
+
+sub onOverlayFadeOutDone(event as object)
+    if event.getData() = "stopped"
+        ' Fade out complete - wait 10 seconds invisible
+        m.fadeCycleTimer.control = "start"
+    end if
+end sub
+
+sub onFadeCycleTimer()
+    ' Invisible wait period over - start new cycle
+    startFadeCycle()
 end sub

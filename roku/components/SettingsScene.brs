@@ -11,8 +11,23 @@ sub init()
     m.photoIntervalList = m.top.findNode("photoIntervalList")
     m.cycleIntervalList = m.top.findNode("cycleIntervalList")
 
+    m.clockStyleList = m.top.findNode("clockStyleList")
+    m.clockOpacityList = m.top.findNode("clockOpacityList")
+
+    ' Page navigation
+    m.page1 = m.top.findNode("page1")
+    m.page2 = m.top.findNode("page2")
+    m.pageLabel = m.top.findNode("pageLabel")
+    m.nextPageBtn1 = m.top.findNode("nextPageBtn1")
+    m.prevPageBtn2 = m.top.findNode("prevPageBtn2")
+    m.currentPage = 1
+
+    m.nextPageBtn1.observeField("buttonSelected", "onNextPage")
+    m.prevPageBtn2.observeField("buttonSelected", "onPrevPage")
+
     m.photoIntervalValues = [15, 30, 60, 120]
     m.cycleIntervalValues = [3, 5, 10, 15]
+    m.clockOpacityValues = [0, 40, 60, 80]
 
     m.pendingInfoCount = 0
     m.cameraInfoMap = {}
@@ -51,6 +66,23 @@ sub init()
     end for
     m.cycleIntervalList.checkedItem = cycleIdx
 
+    ' Restore clock style
+    savedClockStyle = sec.Read("clockStyle")
+    if savedClockStyle = "fade"
+        m.clockStyleList.checkedItem = 1
+    else
+        m.clockStyleList.checkedItem = 0
+    end if
+
+    ' Restore clock opacity
+    savedClockOpacity = sec.Read("clockOpacity")
+    if savedClockOpacity = "" then savedClockOpacity = "40"
+    opacityIdx = 1 ' default index (40%)
+    for i = 0 to m.clockOpacityValues.count() - 1
+        if m.clockOpacityValues[i].toStr() = savedClockOpacity then opacityIdx = i
+    end for
+    m.clockOpacityList.checkedItem = opacityIdx
+
     ' Mode options
     m.options = []
     m.options.push({ mode: "photo", camera: "" })
@@ -69,6 +101,8 @@ sub init()
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
+    m.clockStyleList.observeField("checkedItem", "onClockStyleChanged")
+    m.clockOpacityList.observeField("checkedItem", "onClockOpacityChanged")
 
     ' Defer focus until scene is fully rendered
     m.top.observeField("visible", "onSceneVisible")
@@ -80,6 +114,28 @@ end sub
 
 sub onSceneVisible()
     if m.top.visible then m.editUrlBtn.setFocus(true)
+end sub
+
+' -- Page navigation --
+
+sub onNextPage()
+    showPage(2)
+end sub
+
+sub onPrevPage()
+    showPage(1)
+end sub
+
+sub showPage(pageNum as integer)
+    m.currentPage = pageNum
+    m.page1.visible = (pageNum = 1)
+    m.page2.visible = (pageNum = 2)
+    m.pageLabel.text = "Page " + pageNum.toStr() + " of 2"
+    if pageNum = 1
+        m.editUrlBtn.setFocus(true)
+    else
+        m.clockStyleList.setFocus(true)
+    end if
 end sub
 
 ' -- Server URL editing --
@@ -97,7 +153,7 @@ sub onUrlDialogButton(event as object)
     idx = event.getData()
     dialog = m.top.dialog
     if idx = 0
-        ' OK pressed — save the URL
+        ' OK pressed - save the URL
         newUrl = dialog.text
         if newUrl <> "" and newUrl <> m.SERVER_URL
             m.SERVER_URL = newUrl
@@ -131,7 +187,6 @@ end sub
 ' -- Authentication --
 
 sub onLogin()
-    ' Show a dialog to get username/password
     dialog = CreateObject("roSGNode", "UsernamePasswordDialog")
     dialog.title = "Log In to Server"
     dialog.buttons = ["Login", "Cancel"]
@@ -142,7 +197,7 @@ end sub
 sub onLoginDialogButton(event as object)
     idx = event.getData()
     dialog = m.top.dialog
-    if idx = 0 ' Login button pressed
+    if idx = 0
         user = dialog.username
         pass = dialog.password
         if user <> "" and pass <> ""
@@ -156,8 +211,6 @@ end sub
 
 sub authenticate(user as string, pass as string)
     url = m.SERVER_URL + "/api/login"
-    
-    ' Correctly format the JSON string for BrightScript
     jsonObj = { username: user, password: pass }
     body = FormatJSON(jsonObj)
 
@@ -178,13 +231,12 @@ sub onAuthResponse(event as object)
             sec.Write("sessionCookie", m.sessionCookie)
             sec.Flush()
             updateLoginStatus()
-            ' Refresh camera list now that we're logged in
             fetchCameraList()
             return
         end if
     end if
     m.loginStatus.text = "Login Failed"
-    m.loginStatus.color = "#FF6B6B" ' Red
+    m.loginStatus.color = "#FF6B6B"
 end sub
 
 ' -- Camera list --
@@ -219,17 +271,14 @@ sub onCameraListResponse(event as object)
         m.filteredCamNames.push(name)
     end for
 
-    ' Add snapshot camera options
     content = m.modeList.content
     savedIdx = -1
 
     for each name in m.filteredCamNames
         item = content.createChild("ContentNode")
         item.title = "Camera - " + name
-
         opt = { mode: "camera", camera: name }
         m.options.push(opt)
-
         if m.savedMode = "camera" and m.savedCamera = name
             savedIdx = m.options.count() - 1
         end if
@@ -239,7 +288,6 @@ sub onCameraListResponse(event as object)
         m.modeList.checkedItem = savedIdx
     end if
 
-    ' Fetch info for each camera to discover HLS streams
     m.loading.text = "Checking streams..."
     m.pendingInfoCount = m.filteredCamNames.count()
     if m.pendingInfoCount = 0 then
@@ -290,10 +338,8 @@ sub addVideoOptions()
         if camInfo <> invalid
             item = content.createChild("ContentNode")
             item.title = "Live Video - " + name
-
             opt = { mode: "video", camera: name }
             m.options.push(opt)
-
             if m.savedMode = "video" and m.savedCamera = name
                 savedIdx = m.options.count() - 1
             end if
@@ -310,7 +356,6 @@ end sub
 sub onModeChanged()
     idx = m.modeList.checkedItem
     if idx < 0 or idx >= m.options.count() then return
-
     opt = m.options[idx]
     sec = CreateObject("roRegistrySection", "settings")
     sec.Write("mode", opt.mode)
@@ -334,37 +379,62 @@ sub onCycleIntervalChanged()
     sec.Flush()
 end sub
 
+sub onClockStyleChanged()
+    idx = m.clockStyleList.checkedItem
+    sec = CreateObject("roRegistrySection", "settings")
+    if idx = 1
+        sec.Write("clockStyle", "fade")
+    else
+        sec.Write("clockStyle", "bounce")
+    end if
+    sec.Flush()
+end sub
+
+sub onClockOpacityChanged()
+    idx = m.clockOpacityList.checkedItem
+    if idx < 0 or idx >= m.clockOpacityValues.count() then return
+    sec = CreateObject("roRegistrySection", "settings")
+    sec.Write("clockOpacity", m.clockOpacityValues[idx].toStr())
+    sec.Flush()
+end sub
+
 sub updateLoginStatus()
     if m.sessionCookie <> ""
         m.loginStatus.text = "Logged In"
-        m.loginStatus.color = "#4CAF50" ' Green
+        m.loginStatus.color = "#4CAF50"
     else
         m.loginStatus.text = "Not Logged In"
-        m.loginStatus.color = "#FFAA00" ' Orange
+        m.loginStatus.color = "#FFAA00"
     end if
 end sub
+
+' -- Focus navigation (per-page) --
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    ' Manual focus navigation
-    controls = [m.editUrlBtn, m.loginBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList]
+    if m.currentPage = 1
+        controls = [m.editUrlBtn, m.loginBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList, m.nextPageBtn1]
+    else
+        controls = [m.clockStyleList, m.clockOpacityList, m.prevPageBtn2]
+    end if
+
     n = controls.count()
 
     idx = -1
     for i = 0 to n - 1
         if controls[i].hasFocus() or controls[i].isInFocusChain() then idx = i
     end for
-    ' Prefer exact hasFocus match (button) over isInFocusChain (list internals)
+    ' Prefer exact hasFocus match
     for i = 0 to n - 1
         if controls[i].hasFocus() then idx = i
     end for
 
     if idx >= 0
-        if key = "down"
+        if key = "down" or key = "right"
             controls[(idx + 1) mod n].setFocus(true)
             return true
-        else if key = "up"
+        else if key = "up" or key = "left"
             controls[(idx - 1 + n) mod n].setFocus(true)
             return true
         end if

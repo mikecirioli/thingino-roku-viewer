@@ -16,8 +16,23 @@ sub init()
     m.photoIntervalList = m.top.findNode("photoIntervalList")
     m.cycleIntervalList = m.top.findNode("cycleIntervalList")
 
+    m.clockStyleList = m.top.findNode("clockStyleList")
+    m.clockOpacityList = m.top.findNode("clockOpacityList")
+
+    ' Page navigation
+    m.page1 = m.top.findNode("page1")
+    m.page2 = m.top.findNode("page2")
+    m.pageLabel = m.top.findNode("pageLabel")
+    m.nextPageBtn1 = m.top.findNode("nextPageBtn1")
+    m.prevPageBtn2 = m.top.findNode("prevPageBtn2")
+    m.currentPage = 1
+
+    m.nextPageBtn1.observeField("buttonSelected", "onNextPage")
+    m.prevPageBtn2.observeField("buttonSelected", "onPrevPage")
+
     m.photoIntervalValues = [15, 30, 60, 120]
     m.cycleIntervalValues = [3, 5, 10, 15]
+    m.clockOpacityValues = [0, 40, 60, 80]
 
     m.pendingInfoCount = 0
     m.cameraInfoMap = {}
@@ -58,6 +73,23 @@ sub init()
     end for
     m.cycleIntervalList.checkedItem = cycleIdx
 
+    ' Restore clock style
+    savedClockStyle = sec.Read("clockStyle")
+    if savedClockStyle = "fade"
+        m.clockStyleList.checkedItem = 1
+    else
+        m.clockStyleList.checkedItem = 0
+    end if
+
+    ' Restore clock opacity
+    savedClockOpacity = sec.Read("clockOpacity")
+    if savedClockOpacity = "" then savedClockOpacity = "40"
+    opacityIdx = 1 ' default index (40%)
+    for i = 0 to m.clockOpacityValues.count() - 1
+        if m.clockOpacityValues[i].toStr() = savedClockOpacity then opacityIdx = i
+    end for
+    m.clockOpacityList.checkedItem = opacityIdx
+
     m.options = []
     m.options.push({ mode: "photo", camera: "" })
     m.options.push({ mode: "camera", camera: "cycle" })
@@ -76,20 +108,45 @@ sub init()
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
+    m.clockStyleList.observeField("checkedItem", "onClockStyleChanged")
+    m.clockOpacityList.observeField("checkedItem", "onClockOpacityChanged")
 
     m.loading.visible = true
     fetchCameraList()
 
     ' Redirect focus from the Group to the first button.
-    ' When the parent calls setFocus(true) on this Group, hasFocus()
-    ' fires and we redirect to editUrlBtn automatically.
     m.top.observeField("focusedChild", "onFocusChanged")
 end sub
 
 sub onFocusChanged()
-    ' If the Group itself has focus (not a child), redirect to first button
     if m.top.hasFocus()
+        if m.currentPage = 1
+            m.editUrlBtn.setFocus(true)
+        else
+            m.clockStyleList.setFocus(true)
+        end if
+    end if
+end sub
+
+' -- Page navigation --
+
+sub onNextPage()
+    showPage(2)
+end sub
+
+sub onPrevPage()
+    showPage(1)
+end sub
+
+sub showPage(pageNum as integer)
+    m.currentPage = pageNum
+    m.page1.visible = (pageNum = 1)
+    m.page2.visible = (pageNum = 2)
+    m.pageLabel.text = "Page " + pageNum.toStr() + " of 2"
+    if pageNum = 1
         m.editUrlBtn.setFocus(true)
+    else
+        m.clockStyleList.setFocus(true)
     end if
 end sub
 
@@ -328,11 +385,26 @@ sub onCycleIntervalChanged()
     sec.Flush()
 end sub
 
+sub onClockStyleChanged()
+    idx = m.clockStyleList.checkedItem
+    sec = CreateObject("roRegistrySection", "settings")
+    if idx = 1
+        sec.Write("clockStyle", "fade")
+    else
+        sec.Write("clockStyle", "bounce")
+    end if
+    sec.Flush()
+end sub
+
+sub onClockOpacityChanged()
+    idx = m.clockOpacityList.checkedItem
+    if idx < 0 or idx >= m.clockOpacityValues.count() then return
+    sec = CreateObject("roRegistrySection", "settings")
+    sec.Write("clockOpacity", m.clockOpacityValues[idx].toStr())
+    sec.Flush()
+end sub
+
 ' -- Key handling --
-' Roku LayoutGroups do NOT handle focus navigation automatically.
-' We must manually route directional keys between focusable controls.
-' RadioButtonList consumes up/down internally; if those keys reach us
-' here, it means the list is at a boundary and we should move on.
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
@@ -343,57 +415,84 @@ function onKeyEvent(key as string, press as boolean) as boolean
         sec.Write("password", m.PASSWORD)
         sec.Flush()
 
+        if m.currentPage = 2
+            ' Go back to page 1 instead of closing
+            showPage(1)
+            return true
+        end if
+
         m.top.visible = false
         m.top.wasClosed = true
         return true
     end if
 
-    ' Left column: buttons
-    buttons = [m.editUrlBtn, m.editUserBtn, m.editPassBtn]
-    ' Right column: radio lists
-    lists = [m.modeList, m.photoIntervalList, m.cycleIntervalList]
+    if m.currentPage = 1
+        ' Page 1: two-column navigation
+        buttons = [m.editUrlBtn, m.editUserBtn, m.editPassBtn, m.nextPageBtn1]
+        lists = [m.modeList, m.photoIntervalList, m.cycleIntervalList]
 
-    ' Which button has focus? (-1 if none)
-    btnIdx = -1
-    for i = 0 to buttons.count() - 1
-        if buttons[i].hasFocus() then btnIdx = i
-    end for
+        btnIdx = -1
+        for i = 0 to buttons.count() - 1
+            if buttons[i].hasFocus() then btnIdx = i
+        end for
 
-    ' Which list has focus? (-1 if none)
-    listIdx = -1
-    for i = 0 to lists.count() - 1
-        if lists[i].hasFocus() or lists[i].isInFocusChain() then listIdx = i
-    end for
-    ' Disambiguate: if a button also matched via focus chain, prefer button
-    if btnIdx >= 0 then listIdx = -1
+        listIdx = -1
+        for i = 0 to lists.count() - 1
+            if lists[i].hasFocus() or lists[i].isInFocusChain() then listIdx = i
+        end for
+        if btnIdx >= 0 then listIdx = -1
 
-    n = buttons.count()
+        nBtn = buttons.count()
+        nList = lists.count()
 
-    if btnIdx >= 0
-        ' Focus is on a button in the left column
-        if key = "down"
-            buttons[(btnIdx + 1) mod n].setFocus(true)
-            return true
-        else if key = "up"
-            buttons[(btnIdx - 1 + n) mod n].setFocus(true)
-            return true
-        else if key = "right"
-            lists[btnIdx].setFocus(true)
-            return true
+        if btnIdx >= 0
+            if key = "down"
+                buttons[(btnIdx + 1) mod nBtn].setFocus(true)
+                return true
+            else if key = "up"
+                buttons[(btnIdx - 1 + nBtn) mod nBtn].setFocus(true)
+                return true
+            else if key = "right"
+                target = btnIdx
+                if target >= nList then target = nList - 1
+                lists[target].setFocus(true)
+                return true
+            end if
+        else if listIdx >= 0
+            if key = "left"
+                target = listIdx
+                if target >= nBtn then target = nBtn - 1
+                buttons[target].setFocus(true)
+                return true
+            else if key = "down"
+                lists[(listIdx + 1) mod nList].setFocus(true)
+                return true
+            else if key = "up"
+                lists[(listIdx - 1 + nList) mod nList].setFocus(true)
+                return true
+            end if
         end if
-    else if listIdx >= 0
-        ' Focus is on a RadioButtonList in the right column
-        if key = "left"
-            buttons[listIdx].setFocus(true)
-            return true
-        else if key = "down"
-            ' At bottom boundary — move to next list
-            lists[(listIdx + 1) mod n].setFocus(true)
-            return true
-        else if key = "up"
-            ' At top boundary — move to prev list
-            lists[(listIdx - 1 + n) mod n].setFocus(true)
-            return true
+    else
+        ' Page 2: single-column navigation
+        controls = [m.clockStyleList, m.clockOpacityList, m.prevPageBtn2]
+        n = controls.count()
+
+        idx = -1
+        for i = 0 to n - 1
+            if controls[i].hasFocus() or controls[i].isInFocusChain() then idx = i
+        end for
+        for i = 0 to n - 1
+            if controls[i].hasFocus() then idx = i
+        end for
+
+        if idx >= 0
+            if key = "down" or key = "right"
+                controls[(idx + 1) mod n].setFocus(true)
+                return true
+            else if key = "up" or key = "left"
+                controls[(idx - 1 + n) mod n].setFocus(true)
+                return true
+            end if
         end if
     end if
 
