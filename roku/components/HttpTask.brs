@@ -38,13 +38,22 @@ sub doRequest()
         http.AddHeader("Authorization", "Basic " + ba.ToBase64String())
     end if
 
+    ' Determine download mode: file or string
+    toFile = ""
+    if req.toFile <> invalid and req.toFile <> "" then toFile = req.toFile
+
     if method = "POST"
         http.AddHeader("Content-Type", "application/json")
         if not http.AsyncPostFromString(body)
             m.top.error = "POST_FAILED"
             return
         end if
-    else ' Default to GET
+    else if toFile <> ""
+        if not http.AsyncGetToFile(toFile)
+            m.top.error = "GET_TO_FILE_FAILED"
+            return
+        end if
+    else
         if not http.AsyncGetToString()
             m.top.error = "GET_FAILED"
             return
@@ -56,8 +65,13 @@ sub doRequest()
         msg = wait(10000, port) ' 10 second timeout
         if type(msg) = "roUrlEvent"
             m.top.responseCode = msg.GetResponseCode()
+            m.top.responseHeaders = msg.GetResponseHeaders()
             if m.top.responseCode = 200
-                m.top.response = msg.GetString()
+                if toFile <> ""
+                    m.top.response = toFile
+                else
+                    m.top.response = msg.GetString()
+                end if
             else
                 m.top.error = "HTTP " + m.top.responseCode.toStr()
             end if

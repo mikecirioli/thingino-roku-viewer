@@ -19,6 +19,7 @@ Endpoints:
   /ha/forecast   Plain text: 3-day forecast
   /ha/event      Plain text: next calendar event
   /ha/thermostat Plain text: thermostat status
+  /ticker        JSON: screensaver ticker items (text from HA + camera image URLs)
   /health        Health check
 
 Camera configuration (in order of precedence):
@@ -1747,7 +1748,7 @@ button:hover { background: #0056b3; }
         path = parsed.path.rstrip("/")
 
         # Define which paths require authentication
-        protected_prefixes = ('/web', '/random', '/camera/', '/timelapse/', '/ha/', '/library')
+        protected_prefixes = ('/web', '/random', '/camera/', '/timelapse/', '/ha/', '/library', '/ticker')
         is_protected = path.startswith(protected_prefixes)
         
         # Exception: /web/ is protected, but assets inside /web/ (like logo.png) are not,
@@ -1789,6 +1790,8 @@ button:hover { background: #0056b3; }
             self.serve_camera(path, parsed)
         elif path.startswith("/frigate") and FRIGATE_URL:
             self.proxy_frigate(parsed)
+        elif path == "/ticker":
+            self.serve_ticker()
         elif path.startswith("/ha/"):
             self.serve_ha(path)
         elif path == "/timelapse/config":
@@ -2248,6 +2251,61 @@ button:hover { background: #0056b3; }
         self.end_headers()
         self.wfile.write(data)
 
+    def serve_ticker(self):
+        """GET /ticker — return JSON array of ticker items for screensaver overlay.
+
+        Each item has: type ("text" or "image"), content/url, source.
+        Text items are pre-fetched HA data. Image items are camera snapshot URLs.
+        Results cached for 120s to match HA cache TTL.
+        """
+        items = []
+
+        # HA text sources
+        ha_handlers = {
+            "weather": ha_weather,
+            "forecast": ha_forecast,
+            "thermostat": ha_thermostat,
+            "event": ha_next_event,
+        }
+        if HA_URL and HA_TOKEN:
+            for source, fn in ha_handlers.items():
+                try:
+                    text = fn()
+                    if text:
+                        items.append({"type": "text", "content": text, "source": source})
+                except Exception:
+                    pass
+
+        # Camera image sources — include all cameras that have snapshot capability
+        # Also pre-warm the camera pollers so snapshots are ready when clients request them
+        go2rtc_names = _go2rtc_streams()
+        camera_names = sorted(set(list(_CAMERAS.keys()) + go2rtc_names))
+        for name in camera_names:
+            cam = _CAMERAS.get(name, {})
+            if cam.get("snapshot") or name in go2rtc_names:
+                items.append({
+                    "type": "image",
+                    "url": "/camera/{}?w=400&h=225".format(name),
+                    "source": "camera:{}".format(name),
+                })
+                # Touch the stream to keep its poller alive
+                with _streams_lock:
+                    stream = _streams.get(name)
+                    if stream is None and cam.get("snapshot"):
+                        stream = CameraStream(name, cam)
+                        _streams[name] = stream
+                    if stream is not None:
+                        stream._last_request = time.time()
+
+        result = json.dumps({"items": items}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "max-age=120")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(result)))
+        self.end_headers()
+        self.wfile.write(result)
+
     def serve_camera_list(self):
         names = sorted(set(list(_CAMERAS.keys()) + _go2rtc_streams()))
         data = json.dumps(names).encode()
@@ -2372,6 +2430,54 @@ button:hover { background: #0056b3; }
         self.end_headers()
         self.wfile.write(html.encode())
 
+    def _build_photo_info(self, photo_path):
+        """Build 'City, Country, DD-MM-YYYY' string for screensaver overlay."""
+        try:
+            import sqlite3 as _sqlite3
+            filename = os.path.basename(photo_path)
+            parts = []
+            date_str = None
+
+            if geotag_db is not None:
+                # Single DB query for both location and timestamp
+                conn = _sqlite3.connect(geotag_db.db_path)
+                conn.row_factory = _sqlite3.Row
+                row = conn.execute('''
+                    SELECT p.exif_timestamp, g.location_name
+                    FROM photos p
+                    LEFT JOIN geotags g ON p.id = g.photo_id
+                    WHERE p.filename = ?
+                ''', (filename,)).fetchone()
+                conn.close()
+
+                if row:
+                    if row['location_name']:
+                        loc = row['location_name']
+                        # "Cologne, Köln, North Rhine-Westphalia, Germany" → "Cologne, Germany"
+                        loc_parts = [p.strip() for p in loc.split(',')]
+                        if len(loc_parts) >= 2:
+                            parts.append(f"{loc_parts[0]}, {loc_parts[-1]}")
+                        else:
+                            parts.append(loc)
+                    if row['exif_timestamp']:
+                        dt = datetime.fromtimestamp(row['exif_timestamp'])
+                        date_str = dt.strftime('%d-%m-%Y')
+
+            # Fall back to EXIF extraction if no DB timestamp
+            if not date_str:
+                ts = extract_exif_timestamp(photo_path)
+                if ts:
+                    dt = datetime.fromtimestamp(ts)
+                    date_str = dt.strftime('%d-%m-%Y')
+
+            if date_str:
+                parts.append(date_str)
+
+            return ', '.join(parts) if parts else None
+        except Exception as e:
+            print(f"WARNING: _build_photo_info failed for {photo_path}: {e}")
+            return None
+
     def serve_random(self, parsed):
         global _shuffled_photos, _photo_index
         photos = get_photos()
@@ -2390,6 +2496,10 @@ button:hover { background: #0056b3; }
             
         path = _shuffled_photos[_photo_index]
         _photo_index += 1
+
+        # Pre-compute photo info header: "City, Country, DD-MM-YYYY"
+        photo_info = self._build_photo_info(path)
+
         params = self._merge_settings(parse_qs(parsed.query))
         if "w" in params or "h" in params:
             max_w = int(params.get("w", [1920])[0])
@@ -2401,13 +2511,15 @@ button:hover { background: #0056b3; }
                 crop_threshold = float(params.get("crop_threshold", [0])[0])
             except (ValueError, IndexError):
                 crop_threshold = 0
-            
+
             data, ct = resize_image(path, max_w, max_h, disable_exif=disable_exif, fit=fit, crop_threshold=crop_threshold)
             if data:
                 self.send_response(200)
                 self.send_header("Content-Type", ct)
                 self.send_header("Cache-Control", "no-cache, no-store")
                 self.send_header("Content-Length", str(len(data)))
+                if photo_info:
+                    self.send_header("X-Photo-Info", photo_info)
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -2419,6 +2531,8 @@ button:hover { background: #0056b3; }
             self.send_header("Content-Type", ct)
             self.send_header("Cache-Control", "no-cache, no-store")
             self.send_header("Content-Length", str(len(data)))
+            if photo_info:
+                self.send_header("X-Photo-Info", photo_info)
             self.end_headers()
             self.wfile.write(data)
         except OSError:
@@ -2798,10 +2912,36 @@ if __name__ == "__main__":
     thumb_gen = ThumbnailGenerator()
     thumb_gen.start()
 
-    # Initialize geotag database
+    # Initialize geotag database and auto-index photos in background
     try:
         geotag_db = GeotagDatabase(GEOTAG_DB_PATH)
-        print(f"Geotag database initialized at {GEOTAG_DB_PATH}")
+        print(f"  geotags: database initialized at {GEOTAG_DB_PATH}")
+
+        def _index_photos_background():
+            photos = get_photos()
+            indexed = 0
+            has_gps = 0
+            for photo_path in photos:
+                try:
+                    filename = os.path.basename(photo_path)
+                    photo_id = geotag_db.get_photo_id(filename)
+                    if not photo_id:
+                        exif_ts = extract_exif_timestamp(photo_path)
+                        geotag_db.add_photo(filename, photo_path, exif_ts)
+                        indexed += 1
+                        geotag = extract_gps_from_exif(photo_path)
+                        if geotag:
+                            geotag.source = 'exif'
+                            geotag_db.set_geotag_metadata(filename, geotag)
+                            has_gps += 1
+                except Exception as e:
+                    print(f"  geotags: error indexing {photo_path}: {e}")
+            if indexed:
+                print(f"  geotags: indexed {indexed} new photos ({has_gps} with GPS)")
+            else:
+                print(f"  geotags: all {len(photos)} photos already indexed")
+
+        threading.Thread(target=_index_photos_background, daemon=True).start()
     except Exception as e:
         print(f"Warning: Failed to initialize geotag database: {e}")
 

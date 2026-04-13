@@ -9,7 +9,7 @@
 '   "camera" - live camera snapshots (near-realtime via a_secure_password)
 '
 ' Both modes share the floating clock overlay with rotating
-' data chips (weather, calendar, thermostat, forecast).
+' ticker items from /ticker endpoint (HA data + camera snapshots).
 ' ============================================================
 
 sub init()
@@ -20,12 +20,9 @@ sub init()
     m.PHOTO_FIT   = "scaleToFit"
     m.BLACKLIST   = ["camera-3"]
 
-    m.dataSources = [
-        "/ha/weather",
-        "/ha/event",
-        "/ha/thermostat",
-        "/ha/forecast"
-    ]
+    ' Ticker items fetched from /ticker endpoint
+    m.tickerItems = []
+    m.tickerIdx = 0
 
     m.DEFAULT_USERNAME = ""
     m.DEFAULT_PASSWORD = ""
@@ -79,6 +76,7 @@ sub init()
     m.cycleCounter = 0
 
     ' Photo state
+    m.photoFileCounter = 0
     m.front = "a"
     m.photoA = m.top.findNode("photoA")
     m.photoB = m.top.findNode("photoB")
@@ -91,6 +89,13 @@ sub init()
     m.clock     = m.top.findNode("clock")
     m.dateLabel = m.top.findNode("dateLabel")
     m.dataChip  = m.top.findNode("dataChip")
+    m.photoInfoLabel = m.top.findNode("photoInfoLabel")
+    m.dataImageRow = m.top.findNode("dataImageRow")
+    m.dataImages = [
+        m.top.findNode("dataImage0"),
+        m.top.findNode("dataImage1"),
+        m.top.findNode("dataImage2")
+    ]
 
     ' Crossfade animation refs
     m.fadeInA  = m.top.findNode("fadeInA")
@@ -117,8 +122,6 @@ sub init()
     m.bdx = 1.0  : m.bdy = 0.7
     m.overlayW = 420 : m.overlayH = 160
 
-    ' Data chip rotation state
-    m.dataIndex = 0
     m.pendingAnimation = ""
 
     ' Observe photo load status
@@ -144,9 +147,18 @@ sub init()
     m.clockTimer.control = "start"
     
     m.dataTimer = m.top.findNode("dataTimer")
-    m.dataTimer.duration = m.DATA_SEC
+    ' In bounce mode, rotate ticker every 15s. In fade mode, rotation is driven by fade cycle.
+    if m.clockStyle = "fade"
+        m.dataTimer.duration = m.DATA_SEC
+    else
+        m.dataTimer.duration = 15
+    end if
     m.dataTimer.observeField("fire", "onDataTimer")
     m.dataTimer.control = "start"
+
+    m.tickerRefreshTimer = m.top.findNode("tickerRefreshTimer")
+    m.tickerRefreshTimer.observeField("fire", "onTickerRefresh")
+    m.tickerRefreshTimer.control = "start"
     
     m.bounceTimer = m.top.findNode("bounceTimer")
     m.bounceTimer.observeField("fire", "onBounce")
@@ -185,7 +197,7 @@ sub init()
     ' Initial render
     updateClock()
     loadNextImage() ' Load the first image
-    fetchNextData()
+    fetchTickerData()
 end sub
 
 ' -- Image loading --
@@ -197,13 +209,54 @@ sub loadNextImage()
         url = m.SERVER_URL + "/camera/" + m.cameraName + "?t=" + ts.asSeconds().toStr()
         m.photoB.uri = url
     else
+        ' Use HttpTask to download image to tmp:/ so we can read X-Photo-Info header
         url = m.SERVER_URL + "/random?noexif=1&w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr()
-        if m.front = "a"
-            m.photoB.uri = url
-        else
-            m.photoA.uri = url
+
+        ' Unique filename each time to bust Poster URI cache
+        tmpFile = "tmp:/photo_" + m.photoFileCounter.toStr()
+        ' Delete file from 2 cycles ago to keep tmp:/ clean (keep current + displayed)
+        if m.photoFileCounter >= 2
+            DeleteFile("tmp:/photo_" + (m.photoFileCounter - 2).toStr())
         end if
+        m.photoFileCounter = m.photoFileCounter + 1
+
+        task = CreateObject("roSGNode", "HttpTask")
+        task.observeField("response", "onPhotoFetchResponse")
+        task.request = {
+            url: url,
+            toFile: tmpFile,
+            auth: { username: m.USERNAME, password: m.PASSWORD }
+        }
+        task.control = "run"
+        m.photoFetchTask = task
     end if
+end sub
+
+sub onPhotoFetchResponse(event as object)
+    filePath = event.getData()
+    if filePath = invalid or filePath = "" then return
+
+    task = event.getRoSGNode()
+    if task = invalid then return
+
+    ' Read X-Photo-Info header for geotag display
+    headers = task.responseHeaders
+    photoInfo = ""
+    if headers <> invalid
+        pi = headers["x-photo-info"]
+        if pi <> invalid then photoInfo = pi
+    end if
+    m.photoInfoLabel.text = photoInfo
+    m.photoInfoLabel.visible = (photoInfo <> "")
+
+    ' Set the Poster URI to the downloaded file
+    if m.front = "a"
+        m.photoB.uri = filePath
+    else
+        m.photoA.uri = filePath
+    end if
+
+    resizeOverlay()
 end sub
 
 sub onPhotoLoadA(event as object)
@@ -341,35 +394,80 @@ end sub
 
 ' -- Rotating data chips --
 
-sub fetchNextData()
-    if m.dataSources.count() = 0 then return
-
-    path = m.dataSources[m.dataIndex]
-    m.dataIndex = (m.dataIndex + 1) mod m.dataSources.count()
-
+sub fetchTickerData()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + path + "?t=" + ts.asSeconds().toStr()
-
+    url = m.SERVER_URL + "/ticker?t=" + ts.asSeconds().toStr()
     task = CreateObject("roSGNode", "HttpTask")
-    task.observeField("response", "onDataResponse")
+    task.observeField("response", "onTickerDataResponse")
     task.request = {
         url: url,
         auth: { username: m.USERNAME, password: m.PASSWORD }
     }
     task.control = "run"
-    m.dataTask = task
+    m.tickerTask = task
 end sub
 
-sub onDataResponse(event as object)
+sub onTickerDataResponse(event as object)
     text = event.getData()
-    if text <> invalid and text <> ""
-        m.dataChip.text = text
+    if text = invalid or text = "" then return
+    json = ParseJSON(text)
+    if json = invalid or json.items = invalid then return
+    m.tickerItems = json.items
+    if m.tickerIdx >= m.tickerItems.count() then m.tickerIdx = 0
+    showNextTickerItem()
+end sub
+
+sub showNextTickerItem()
+    if m.tickerItems.count() = 0 then return
+    item = m.tickerItems[m.tickerIdx]
+    m.tickerIdx = (m.tickerIdx + 1) mod m.tickerItems.count()
+
+    if item.type = "image" and item.url <> invalid and item.url <> ""
+        ' Collect 3 camera images using circular queue over image items
+        ts = CreateObject("roDateTime")
+        imageUrls = []
+        imageUrls.push(m.SERVER_URL + item.url + "&t=" + ts.asSeconds().toStr())
+
+        ' Gather 2 more images, wrapping around if needed
+        scanIdx = m.tickerIdx
+        scanned = 0
+        while imageUrls.count() < 3 and scanned < m.tickerItems.count()
+            scanItem = m.tickerItems[scanIdx]
+            scanIdx = (scanIdx + 1) mod m.tickerItems.count()
+            scanned = scanned + 1
+            if scanItem.type = "image" and scanItem.url <> invalid and scanItem.url <> ""
+                imageUrls.push(m.SERVER_URL + scanItem.url + "&t=" + ts.asSeconds().toStr())
+                m.tickerIdx = scanIdx
+            end if
+        end while
+
+        m.dataChip.visible = false
+        m.dataImageRow.visible = true
+        for i = 0 to 2
+            if i < imageUrls.count()
+                m.dataImages[i].uri = imageUrls[i]
+                m.dataImages[i].visible = true
+            else
+                m.dataImages[i].visible = false
+            end if
+        end for
+    else
+        ' Show text, hide image row
+        m.dataImageRow.visible = false
+        m.dataChip.visible = true
+        if item.content <> invalid
+            m.dataChip.text = item.content
+        end if
     end if
     resizeOverlay()
 end sub
 
 sub onDataTimer()
-    fetchNextData()
+    showNextTickerItem()
+end sub
+
+sub onTickerRefresh()
+    fetchTickerData()
 end sub
 
 ' -- Overlay sizing --
@@ -419,8 +517,9 @@ sub startFadeCycle()
     m.by = 40.0 + Rnd(rangeY)
     m.overlay.translation = [m.bx, m.by]
 
-    ' Update clock text before fading in
+    ' Update content before fading in
     updateClock()
+    showNextTickerItem()
 
     ' Start fade in
     m.overlayFadeIn.control = "start"

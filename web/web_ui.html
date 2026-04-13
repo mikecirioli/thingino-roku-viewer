@@ -294,6 +294,46 @@
         .geotag-stat-complete { color: #4caf50; }
         .geotag-stat-missing { color: #f44336; }
         .geotag-stat-suggested { color: #ffeb3b; }
+        .geotag-date-group {
+            margin-bottom: 6px;
+        }
+        .geotag-date-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 10px; background: rgba(58,124,165,0.2); border: 1px solid var(--border-color);
+            border-radius: 6px; cursor: pointer; user-select: none; margin-bottom: 4px;
+        }
+        .geotag-date-header:hover {
+            background: rgba(58,124,165,0.35);
+        }
+        .geotag-date-header .date-label {
+            font-size: 0.85em; font-weight: bold; color: var(--accent-color);
+        }
+        .geotag-date-header .date-count {
+            font-size: 0.75em; color: #aaa;
+        }
+        .geotag-date-header .date-actions {
+            display: flex; gap: 6px; align-items: center;
+        }
+        .geotag-date-header .date-actions button {
+            padding: 3px 8px; font-size: 0.75em; margin: 0; width: auto;
+            background: rgba(255,103,0,0.3); border: 1px solid var(--accent-color);
+            color: white; border-radius: 4px; cursor: pointer;
+        }
+        .geotag-date-header .date-actions button:hover {
+            background: var(--accent-color);
+        }
+        .geotag-date-header .collapse-arrow {
+            font-size: 0.8em; color: #aaa; transition: transform 0.2s; margin-right: 6px;
+        }
+        .geotag-date-header.collapsed .collapse-arrow {
+            transform: rotate(-90deg);
+        }
+        .geotag-date-photos {
+            display: block;
+        }
+        .geotag-date-header.collapsed + .geotag-date-photos {
+            display: none;
+        }
 
         /* Library */
         .lib-card {
@@ -327,11 +367,16 @@
         #ss-overlay {
             position: absolute; bottom: 50px; left: 50px; z-index: 10;
             background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px;
-            color: white; min-width: 250px; transition: all 1s ease-in-out;
+            color: white; min-width: 250px;
+            will-change: opacity, transform;
         }
+        #ss-overlay.ss-bounce { transition: none; }
+        #ss-overlay.ss-fade { transition: opacity 2.5s ease-in-out; }
         #ss-clock { font-size: 4em; font-weight: bold; margin: 0; line-height: 1; }
-        #ss-date { font-size: 1.5em; color: #ccc; margin: 5px 0 15px 0; }
-        #ss-data-chip { font-size: 1.2em; color: var(--accent-color); background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 5px; display: inline-block;}
+        #ss-date { font-size: 1.5em; color: #ccc; margin: 5px 0 0 0; }
+        #ss-photo-info { font-size: 1.1em; color: #aaa; margin: 4px 0 12px 0; font-style: italic; min-height: 1.3em; }
+        #ss-data-chip { font-size: 1.2em; color: var(--accent-color); background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 5px; display: inline-block; }
+        #ss-data-chip img { width: 120px; height: 68px; object-fit: cover; border-radius: 4px; display: inline-block; margin-right: 6px; vertical-align: middle; }
 
         /* Settings Modal */
         #settings-modal {
@@ -486,9 +531,9 @@
                             <div class="control-row">
                                 <label>Sort:</label>
                                 <select id="geotag-sort">
-                                    <option value="filename">Filename</option>
                                     <option value="date">Date (newest first)</option>
                                     <option value="date-asc">Date (oldest first)</option>
+                                    <option value="filename">Filename</option>
                                     <option value="location">Location (lat)</option>
                                 </select>
                             </div>
@@ -502,16 +547,14 @@
 
                             <div id="geotags-bulk-actions">
                                 <h4>Bulk Actions (<span id="geotags-bulk-count">0</span> selected)</h4>
-                                <button class="btn" id="btn-bulk-map">📍 Click Map to Set Location</button>
                                 <div class="control-row">
-                                    <input type="text" id="location-search" placeholder="e.g. Woodstock, VA">
+                                    <input type="text" id="location-search" placeholder="e.g. Cologne, Germany">
                                     <button class="btn" id="btn-search-location">🔍 Search</button>
                                 </div>
-                                <button class="btn" id="btn-bulk-manual">✏️ Enter Coordinates</button>
+                                <button class="btn" id="btn-bulk-map">📍 Click Map to Set Location</button>
                             </div>
 
                             <button class="btn" id="btn-auto-infer">🔍 Auto-Infer Locations</button>
-                            <button class="btn" id="btn-import-exif">📥 Import EXIF Data</button>
                         </div>
                         <div id="geotags-grid">
                             <!-- Photo cards populated by JS -->
@@ -667,6 +710,7 @@
         <div id="ss-overlay">
             <div id="ss-clock">12:00 PM</div>
             <div id="ss-date">Monday, January 1</div>
+            <div id="ss-photo-info"></div>
             <div id="ss-data-chip">Waiting for data...</div>
         </div>
     </div>
@@ -690,6 +734,22 @@
                 <label>Photo Interval (seconds)</label>
                 <input type="number" id="set-photo-int" value="30">
             </div>
+            <div class="form-group">
+                <label>Clock Style</label>
+                <select id="set-clock-style">
+                    <option value="bounce">Bounce</option>
+                    <option value="fade">Fade</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Overlay Transparency</label>
+                <select id="set-clock-opacity">
+                    <option value="0">Solid</option>
+                    <option value="40" selected>40%</option>
+                    <option value="60">60%</option>
+                    <option value="80">80%</option>
+                </select>
+            </div>
             <div class="modal-actions">
                 <button class="btn" id="btn-save-settings">Save & Close</button>
             </div>
@@ -712,17 +772,22 @@
             ssFront: 'a',
             ssTimer: null,
             ssDataTimer: null,
+            ssTickerTimer: null,
             ssClockTimer: null,
             ssBounceTimer: null,
+            ssFadeTimeout: null,
             ssCamIdx: 0,
-            haEndpoints: ['/ha/weather', '/ha/event', '/ha/thermostat', '/ha/forecast'],
-            haIdx: 0,
+            tickerItems: [],
+            tickerIdx: 0,
             overlayPos: { x: 50, y: 50, dx: 1, dy: 0.7 },
             // Timelapse
             tlSummary: [],
             tlDragging: null,
             tlStartPct: 0,
             tlEndPct: 1,
+            // Geotags
+            geotagsInitialized: false,
+            geotagThumbVersion: Date.now(),
         };
 
         // DOM Elements
@@ -742,11 +807,14 @@
             ssClock: document.getElementById('ss-clock'),
             ssDate: document.getElementById('ss-date'),
             ssChip: document.getElementById('ss-data-chip'),
+            ssPhotoInfo: document.getElementById('ss-photo-info'),
             ssOverlay: document.getElementById('ss-overlay'),
             settingsModal: document.getElementById('settings-modal'),
             setSsMode: document.getElementById('set-ss-mode'),
             setSsCam: document.getElementById('set-ss-cam'),
             setPhotoInt: document.getElementById('set-photo-int'),
+            setClockStyle: document.getElementById('set-clock-style'),
+            setClockOpacity: document.getElementById('set-clock-opacity'),
             // Timelapse
             tlNoCam: document.getElementById('tl-no-cam'),
             tlCamContent: document.getElementById('tl-cam-content'),
@@ -785,11 +853,9 @@
             geotagSort: document.getElementById('geotag-sort'),
             geotagSearch: document.getElementById('geotag-search'),
             btnAutoInfer: document.getElementById('btn-auto-infer'),
-            btnImportExif: document.getElementById('btn-import-exif'),
             btnSelectAll: document.getElementById('btn-select-all'),
             btnClearSelection: document.getElementById('btn-clear-selection'),
             btnBulkMap: document.getElementById('btn-bulk-map'),
-            btnBulkManual: document.getElementById('btn-bulk-manual'),
             locationSearch: document.getElementById('location-search'),
             btnSearchLocation: document.getElementById('btn-search-location'),
             geotagsBulkActions: document.getElementById('geotags-bulk-actions'),
@@ -825,7 +891,7 @@
         };
 
         // Load Settings
-        let settings = { mode: 'photo', camera: '', interval: 30 };
+        let settings = { mode: 'photo', camera: '', interval: 30, clockStyle: 'bounce', clockOpacity: 40 };
         try {
             const saved = localStorage.getItem('3bad_settings');
             if (saved) settings = { ...settings, ...JSON.parse(saved) };
@@ -857,6 +923,8 @@
                 } else if (geotagMap) {
                     // Force map to recalculate size when tab becomes visible
                     setTimeout(() => geotagMap.invalidateSize(), 100);
+                    // Reload photos to pick up orientation changes from library tab
+                    loadGeotagPhotos();
                 }
             }
 
@@ -1546,6 +1614,10 @@
 
             cleanupPlayer();
 
+            // Apply overlay opacity
+            const opacity = (100 - (settings.clockOpacity ?? 40)) / 100;
+            const clockStyle = settings.clockStyle || 'bounce';
+
             if (settings.mode === 'video' && settings.camera && state.cameras[settings.camera]?.stream) {
                 els.ssVideo.style.display = 'block';
                 const stream = state.cameras[settings.camera].stream;
@@ -1568,10 +1640,22 @@
             }
 
             updateClock();
-            fetchHaData();
+            fetchTickerData();
             state.ssClockTimer = setInterval(updateClock, 10000);
-            state.ssDataTimer = setInterval(fetchHaData, 60000);
-            state.ssBounceTimer = setInterval(bounceOverlay, 50);
+            state.ssDataTimer = setInterval(fetchTickerData, 120000);
+            state.ssTickerTimer = setInterval(showNextTickerItem, 10000);
+
+            // Clock style: bounce or fade
+            els.ssOverlay.classList.remove('ss-bounce', 'ss-fade');
+            if (clockStyle === 'fade') {
+                els.ssOverlay.classList.add('ss-fade');
+                els.ssOverlay.style.opacity = 0;
+                startFadeCycle(opacity);
+            } else {
+                els.ssOverlay.classList.add('ss-bounce');
+                els.ssOverlay.style.opacity = opacity;
+                state.ssBounceTimer = setInterval(bounceOverlay, 50);
+            }
         }
 
         function stopScreensaver() {
@@ -1583,7 +1667,13 @@
             clearInterval(state.ssTimer);
             clearInterval(state.ssClockTimer);
             clearInterval(state.ssDataTimer);
+            clearInterval(state.ssTickerTimer);
             clearInterval(state.ssBounceTimer);
+            clearTimeout(state.ssFadeTimeout);
+
+            els.ssOverlay.classList.remove('ss-bounce', 'ss-fade');
+            els.ssOverlay.style.opacity = '';
+            els.ssOverlay.style.transform = '';
 
             els.ssVideo.style.display = 'none';
             els.ssVideo.pause();
@@ -1593,23 +1683,67 @@
             if (state.activeCam) selectCamera(state.activeCam, state.activeMode);
         }
 
-        function loadSsImage() {
+        function startFadeCycle(maxOpacity) {
+            if (!state.ssActive) return;
+            // Random position within viewport
+            const ow = els.ssOverlay.offsetWidth || 300;
+            const oh = els.ssOverlay.offsetHeight || 150;
+            const x = 40 + Math.random() * Math.max(1, window.innerWidth - ow - 80);
+            const y = 40 + Math.random() * Math.max(1, window.innerHeight - oh - 80);
+            els.ssOverlay.style.transform = `translate(${x}px, ${y}px)`;
+
+            // Fade in
+            els.ssOverlay.style.opacity = maxOpacity;
+
+            // After fade in (2.5s) + hold (3s) = 5.5s, start fade out
+            state.ssFadeTimeout = setTimeout(() => {
+                if (!state.ssActive) return;
+                els.ssOverlay.style.opacity = 0;
+
+                // After fade out (2.5s) + invisible wait (10s) = 12.5s, repeat
+                state.ssFadeTimeout = setTimeout(() => {
+                    startFadeCycle(maxOpacity);
+                }, 12500);
+            }, 5500);
+        }
+
+        async function loadSsImage() {
             let url = `/random?w=${window.innerWidth}&h=${window.innerHeight}&t=${Date.now()}`;
+            let isRandom = true;
             if (settings.mode === 'cycle' && state.camNames.length > 0) {
                 const cam = state.camNames[state.ssCamIdx];
                 url = `/camera/${cam}?t=${Date.now()}`;
                 state.ssCamIdx = (state.ssCamIdx + 1) % state.camNames.length;
+                isRandom = false;
             }
 
             const backImg = state.ssFront === 'a' ? els.ssImgB : els.ssImgA;
             const frontImg = state.ssFront === 'a' ? els.ssImgA : els.ssImgB;
 
-            backImg.onload = () => {
-                backImg.style.opacity = 1;
-                frontImg.style.opacity = 0;
-                state.ssFront = state.ssFront === 'a' ? 'b' : 'a';
-            };
-            backImg.src = url;
+            try {
+                const resp = await fetch(url);
+                const photoInfo = resp.headers.get('X-Photo-Info');
+                els.ssPhotoInfo.textContent = photoInfo || '';
+                const blob = await resp.blob();
+                const objUrl = URL.createObjectURL(blob);
+
+                backImg.onload = () => {
+                    backImg.style.opacity = 1;
+                    frontImg.style.opacity = 0;
+                    state.ssFront = state.ssFront === 'a' ? 'b' : 'a';
+                    URL.revokeObjectURL(objUrl);
+                };
+                backImg.src = objUrl;
+            } catch (e) {
+                // Fallback: direct src assignment (no photo info)
+                els.ssPhotoInfo.textContent = '';
+                backImg.onload = () => {
+                    backImg.style.opacity = 1;
+                    frontImg.style.opacity = 0;
+                    state.ssFront = state.ssFront === 'a' ? 'b' : 'a';
+                };
+                backImg.src = url;
+            }
         }
 
         function updateClock() {
@@ -1625,16 +1759,47 @@
             els.ssDate.textContent = `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
         }
 
-        async function fetchHaData() {
-            const ep = state.haEndpoints[state.haIdx];
-            state.haIdx = (state.haIdx + 1) % state.haEndpoints.length;
+        async function fetchTickerData() {
             try {
-                const res = await fetch(`${ep}?t=${Date.now()}`);
+                const res = await fetch(`/ticker?t=${Date.now()}`);
                 if (res.ok) {
-                    const text = await res.text();
-                    if (text) els.ssChip.textContent = text;
+                    const data = await res.json();
+                    if (data.items && data.items.length > 0) {
+                        state.tickerItems = data.items;
+                        if (state.tickerIdx >= state.tickerItems.length) state.tickerIdx = 0;
+                        showNextTickerItem();
+                    }
                 }
             } catch (e) {}
+        }
+
+        function showNextTickerItem() {
+            if (state.tickerItems.length === 0) return;
+            const item = state.tickerItems[state.tickerIdx];
+            state.tickerIdx = (state.tickerIdx + 1) % state.tickerItems.length;
+            if (item.type === 'image' && item.url) {
+                // Collect 3 camera images using circular queue
+                const urls = [item.url];
+                let scanIdx = state.tickerIdx;
+                let scanned = 0;
+                while (urls.length < 3 && scanned < state.tickerItems.length) {
+                    const peek = state.tickerItems[scanIdx];
+                    scanIdx = (scanIdx + 1) % state.tickerItems.length;
+                    scanned++;
+                    if (peek.type === 'image' && peek.url) {
+                        urls.push(peek.url);
+                        state.tickerIdx = scanIdx;
+                    }
+                }
+                els.ssChip.innerHTML = '';
+                urls.forEach(u => {
+                    const img = document.createElement('img');
+                    img.src = u + (u.includes('?') ? '&' : '?') + 't=' + Date.now();
+                    els.ssChip.appendChild(img);
+                });
+            } else {
+                els.ssChip.textContent = item.content || '';
+            }
         }
 
         function bounceOverlay() {
@@ -1658,6 +1823,8 @@
             els.setSsMode.value = settings.mode;
             els.setSsCam.value = settings.camera || (state.camNames[0] || '');
             els.setPhotoInt.value = settings.interval;
+            els.setClockStyle.value = settings.clockStyle || 'bounce';
+            els.setClockOpacity.value = (settings.clockOpacity ?? 40).toString();
             els.settingsModal.style.display = 'flex';
         };
 
@@ -1676,6 +1843,8 @@
             settings.mode = els.setSsMode.value;
             settings.camera = els.setSsCam.value;
             settings.interval = parseInt(els.setPhotoInt.value, 10) || 30;
+            settings.clockStyle = els.setClockStyle.value;
+            settings.clockOpacity = parseInt(els.setClockOpacity.value, 10);
             localStorage.setItem('3bad_settings', JSON.stringify(settings));
             els.settingsModal.style.display = 'none';
         };
@@ -1923,12 +2092,13 @@
             els.geotagSort.addEventListener('change', filterAndSortPhotos);
             els.geotagSearch.addEventListener('input', filterAndSortPhotos);
             els.btnAutoInfer.addEventListener('click', runAutoInference);
-            els.btnImportExif.addEventListener('click', importExifData);
             els.btnSelectAll.addEventListener('click', selectAllVisible);
             els.btnClearSelection.addEventListener('click', clearSelection);
             els.btnBulkMap.addEventListener('click', enableMapClickMode);
             els.btnSearchLocation.addEventListener('click', searchLocation);
-            els.btnBulkManual.addEventListener('click', showManualEntryDialog);
+            els.locationSearch.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') searchLocation();
+            });
 
             // Initialize Leaflet map
             setTimeout(() => {
@@ -1939,9 +2109,10 @@
                         preferCanvas: true
                     }).setView([35.7796, -78.6382], 4);
 
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '© OpenStreetMap contributors',
-                        maxZoom: 19
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+                        subdomains: 'abcd',
+                        maxZoom: 15
                     }).addTo(geotagMap);
 
                     // Initialize marker cluster group
@@ -1976,6 +2147,7 @@
 
         async function loadGeotagPhotos(status = 'all') {
             try {
+                state.geotagThumbVersion = Date.now();
                 const response = await fetch(`/photos/geotags?status=${status}`);
                 const data = await response.json();
 
@@ -1984,8 +2156,8 @@
                 // Update stats - always show totals regardless of filter
                 await updateGeotagStats();
 
-                // Render grid
-                renderGeotagGrid(geotagPhotos);
+                // Render grid with current filter/sort applied
+                filterAndSortPhotos();
 
                 // Add markers to map
                 updateGeotagMap();
@@ -2014,6 +2186,60 @@
             }
         }
 
+        function formatDateKey(ts) {
+            if (!ts) return 'No Date';
+            const d = new Date(ts * 1000);
+            return d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        function buildPhotoCard(photo) {
+            const card = document.createElement('div');
+            card.className = 'geotag-photo-card';
+            card.dataset.filename = photo.filename;
+
+            if (geotagSelectedFiles.has(photo.filename)) {
+                card.classList.add('selected');
+            }
+
+            const hasGPS = photo.geotag && photo.geotag.latitude != null;
+            const badge = hasGPS ? 'has-gps">● GPS' : 'no-gps">● No GPS';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'geotag-checkbox';
+            checkbox.checked = geotagSelectedFiles.has(photo.filename);
+            checkbox.onclick = (e) => {
+                e.stopPropagation();
+                togglePhotoSelection(photo.filename);
+            };
+
+            const thumbCacheBust = state.geotagThumbVersion || Date.now();
+            card.innerHTML = `
+                <img src="/library/thumb?file=${encodeURIComponent(photo.filename)}&_v=${thumbCacheBust}"
+                     alt="${photo.filename}"
+                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect width=%22200%22 height=%22200%22 fill=%22%23333%22/><text x=%2250%%22 y=%2250%%22 fill=%22white%22 text-anchor=%22middle%22>No Image</text></svg>'">
+                <div class="geotag-status-badge ${badge}</div>
+                <div class="geotag-photo-info">
+                    <div class="geotag-photo-name" title="${photo.filename}">${photo.filename}</div>
+                    ${hasGPS && photo.geotag.location_name ? `<div style="font-size: 0.75em; color: var(--accent-color); margin-top: 4px;">${photo.geotag.location_name}</div>` : ''}
+                    ${hasGPS ? `<div style="font-size: 0.7em; color: #666; margin-top: 2px;">${photo.geotag.latitude.toFixed(4)}, ${photo.geotag.longitude.toFixed(4)}</div>` : ''}
+                </div>
+            `;
+
+            card.insertBefore(checkbox, card.firstChild);
+
+            card.onclick = (e) => {
+                if (e.target === checkbox) return;
+                if (geotagMapClickEnabled) return;
+                if (hasGPS) {
+                    geotagMap.setView([photo.geotag.latitude, photo.geotag.longitude], 8);
+                }
+                tagSinglePhoto(photo.filename);
+            };
+
+            return card;
+        }
+
         function renderGeotagGrid(photos) {
             els.geotagsGrid.innerHTML = '';
             geotagFilteredPhotos = photos;
@@ -2023,49 +2249,55 @@
                 return;
             }
 
+            // Group photos by date
+            const groups = new Map();
             photos.forEach(photo => {
-                const card = document.createElement('div');
-                card.className = 'geotag-photo-card';
-                card.dataset.filename = photo.filename;
+                const key = formatDateKey(photo.exif_timestamp);
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(photo);
+            });
 
-                if (geotagSelectedFiles.has(photo.filename)) {
-                    card.classList.add('selected');
-                }
+            groups.forEach((groupPhotos, dateLabel) => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'geotag-date-group';
 
-                const hasGPS = photo.geotag && photo.geotag.latitude;
-                const badge = hasGPS ? 'has-gps">● GPS' : 'no-gps">● No GPS';
-
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.className = 'geotag-checkbox';
-                checkbox.checked = geotagSelectedFiles.has(photo.filename);
-                checkbox.onclick = (e) => {
-                    e.stopPropagation();
-                    togglePhotoSelection(photo.filename);
-                };
-
-                card.innerHTML = `
-                    <img src="/library/thumb?file=${encodeURIComponent(photo.filename)}"
-                         alt="${photo.filename}"
-                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect width=%22200%22 height=%22200%22 fill=%22%23333%22/><text x=%2250%%22 y=%2250%%22 fill=%22white%22 text-anchor=%22middle%22>No Image</text></svg>'">
-                    <div class="geotag-status-badge ${badge}</div>
-                    <div class="geotag-photo-info">
-                        <div class="geotag-photo-name" title="${photo.filename}">${photo.filename}</div>
-                        ${hasGPS ? `<div style="font-size: 0.75em; color: #aaa; margin-top: 4px;">${photo.geotag.latitude.toFixed(4)}, ${photo.geotag.longitude.toFixed(4)}</div>` : ''}
-                        ${photo.geotag && photo.geotag.location_name ? `<div style="font-size: 0.75em; color: var(--accent-color); margin-top: 2px;">${photo.geotag.location_name}</div>` : ''}
+                const gpsCount = groupPhotos.filter(p => p.geotag && p.geotag.latitude != null).length;
+                const header = document.createElement('div');
+                header.className = 'geotag-date-header';
+                header.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="collapse-arrow">▼</span>
+                        <span class="date-label">${dateLabel}</span>
+                        <span class="date-count">(${groupPhotos.length} photo${groupPhotos.length > 1 ? 's' : ''}, ${gpsCount} tagged)</span>
+                    </div>
+                    <div class="date-actions">
+                        <button class="tag-group-btn">📍 Tag Group</button>
                     </div>
                 `;
 
-                card.insertBefore(checkbox, card.firstChild);
+                // Collapse/expand on header click (but not on buttons)
+                header.addEventListener('click', (e) => {
+                    if (e.target.closest('.date-actions')) return;
+                    header.classList.toggle('collapsed');
+                });
 
-                card.onclick = (e) => {
-                    if (e.target === checkbox) return;
-                    if (hasGPS && !geotagMapClickEnabled) {
-                        geotagMap.setView([photo.geotag.latitude, photo.geotag.longitude], 12);
-                    }
-                };
+                // Tag group button
+                header.querySelector('.tag-group-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const filenames = groupPhotos.map(p => p.filename);
+                    tagPhotoGroup(filenames, dateLabel);
+                });
 
-                els.geotagsGrid.appendChild(card);
+                groupDiv.appendChild(header);
+
+                const photosDiv = document.createElement('div');
+                photosDiv.className = 'geotag-date-photos';
+                groupPhotos.forEach(photo => {
+                    photosDiv.appendChild(buildPhotoCard(photo));
+                });
+
+                groupDiv.appendChild(photosDiv);
+                els.geotagsGrid.appendChild(groupDiv);
             });
 
             updateBulkActionsUI();
@@ -2079,12 +2311,12 @@
 
             // Add markers for photos with GPS
             geotagPhotos.forEach(photo => {
-                if (photo.geotag && photo.geotag.latitude) {
+                if (photo.geotag && photo.geotag.latitude != null) {
                     const marker = L.marker([photo.geotag.latitude, photo.geotag.longitude]);
 
                     marker.bindPopup(`
                         <div style="min-width: 150px;">
-                            <img src="/library/thumb?file=${encodeURIComponent(photo.filename)}"
+                            <img src="/library/thumb?file=${encodeURIComponent(photo.filename)}&_v=${state.geotagThumbVersion}"
                                  style="width: 150px; height: 150px; object-fit: cover; margin-bottom: 8px;">
                             <div style="font-size: 0.9em; font-weight: bold;">${photo.filename}</div>
                             ${photo.geotag.location_name ? `<div style="font-size: 0.8em; color: #666; margin-top: 4px;">${photo.geotag.location_name}</div>` : ''}
@@ -2103,11 +2335,11 @@
 
             let filtered = [...geotagPhotos];
 
-            // Filter by status
+            // Filter by status (geotag object may exist with null latitude from LEFT JOIN)
             if (status === 'complete') {
-                filtered = filtered.filter(p => p.geotag);
+                filtered = filtered.filter(p => p.geotag && p.geotag.latitude != null);
             } else if (status === 'missing') {
-                filtered = filtered.filter(p => !p.geotag);
+                filtered = filtered.filter(p => !p.geotag || p.geotag.latitude == null);
             }
 
             // Filter by search
@@ -2210,8 +2442,9 @@
             }
         }
 
-        async function bulkApplyLocation(lat, lng) {
-            if (!confirm(`Apply location ${lat.toFixed(6)}, ${lng.toFixed(6)} to ${geotagSelectedFiles.size} photo(s)?\n\nThis will write GPS data to the image files.`)) {
+        async function bulkApplyLocation(lat, lng, locationName) {
+            const displayLoc = locationName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            if (!confirm(`Apply location "${displayLoc}" to ${geotagSelectedFiles.size} photo(s)?\n\nThis will write GPS data to the image files.`)) {
                 geotagMapClickEnabled = false;
                 updateBulkActionsUI();
                 return;
@@ -2221,17 +2454,20 @@
             els.btnBulkMap.textContent = '⏳ Applying...';
 
             try {
+                const geotag = {
+                    latitude: lat,
+                    longitude: lng,
+                    source: 'manual',
+                    updated_by: 'user'
+                };
+                if (locationName) geotag.location_name = locationName;
+
                 const response = await fetch('/photos/geotag/batch-update', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         filenames: Array.from(geotagSelectedFiles),
-                        geotag: {
-                            latitude: lat,
-                            longitude: lng,
-                            source: 'manual',
-                            updated_by: 'user'
-                        }
+                        geotag
                     })
                 });
 
@@ -2253,32 +2489,102 @@
             }
         }
 
-        function showManualEntryDialog() {
-            if (geotagSelectedFiles.size === 0) {
-                alert('Please select photos first!');
-                return;
+        async function tagPhotoGroup(filenames, dateLabel) {
+            const query = prompt(`Set location for ${filenames.length} photos from ${dateLabel}:\n\ne.g. "Cologne, Germany" or "Nurnberg, Germany"`);
+            if (!query || !query.trim()) return;
+
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.trim())}&limit=1`, {
+                    headers: { 'User-Agent': '3-Bad-Dogs Photo Frame' }
+                });
+                const results = await response.json();
+
+                if (results.length === 0) {
+                    alert(`No results found for "${query}".\n\nTry adding country (e.g. "Nurnberg, Germany")`);
+                    return;
+                }
+
+                const result = results[0];
+                const lat = parseFloat(result.lat);
+                const lng = parseFloat(result.lon);
+
+                if (!confirm(`Found: ${result.display_name}\n\nApply to ${filenames.length} photos from ${dateLabel}?`)) return;
+
+                const resp = await fetch('/photos/geotag/batch-update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        filenames,
+                        geotag: {
+                            latitude: lat,
+                            longitude: lng,
+                            location_name: result.display_name,
+                            source: 'manual',
+                            updated_by: 'user'
+                        }
+                    })
+                });
+
+                const data = await resp.json();
+                if (data.updated > 0) {
+                    geotagMap.setView([lat, lng], 8);
+                    await loadGeotagPhotos();
+                } else {
+                    alert('Failed to update photos.');
+                }
+            } catch (error) {
+                console.error('Tag group failed:', error);
+                alert('Failed to set location. Check connection.');
             }
+        }
 
-            const lat = prompt(`Enter latitude for ${geotagSelectedFiles.size} photo(s):\n\nExample: 35.7796`);
-            if (!lat) return;
+        async function tagSinglePhoto(filename) {
+            const query = prompt(`Set location for ${filename}:\n\ne.g. "Cologne, Germany" or "Nurnberg, Germany"`);
+            if (!query || !query.trim()) return;
 
-            const lng = prompt(`Enter longitude:\n\nExample: -78.6382`);
-            if (!lng) return;
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.trim())}&limit=1`, {
+                    headers: { 'User-Agent': '3-Bad-Dogs Photo Frame' }
+                });
+                const results = await response.json();
 
-            const latitude = parseFloat(lat);
-            const longitude = parseFloat(lng);
+                if (results.length === 0) {
+                    alert(`No results found for "${query}".\n\nTry adding country (e.g. "Nurnberg, Germany")`);
+                    return;
+                }
 
-            if (isNaN(latitude) || isNaN(longitude)) {
-                alert('Invalid coordinates!');
-                return;
+                const result = results[0];
+                const lat = parseFloat(result.lat);
+                const lng = parseFloat(result.lon);
+
+                if (!confirm(`Found: ${result.display_name}\n\nApply to ${filename}?`)) return;
+
+                const resp = await fetch('/photos/geotag/batch-update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        filenames: [filename],
+                        geotag: {
+                            latitude: lat,
+                            longitude: lng,
+                            location_name: result.display_name,
+                            source: 'manual',
+                            updated_by: 'user'
+                        }
+                    })
+                });
+
+                const data = await resp.json();
+                if (data.updated > 0) {
+                    geotagMap.setView([lat, lng], 8);
+                    await loadGeotagPhotos();
+                } else {
+                    alert('Failed to update photo.');
+                }
+            } catch (error) {
+                console.error('Tag single photo failed:', error);
+                alert('Failed to set location. Check connection.');
             }
-
-            if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-                alert('Coordinates out of range!\nLatitude: -90 to 90\nLongitude: -180 to 180');
-                return;
-            }
-
-            bulkApplyLocation(latitude, longitude);
         }
 
         async function searchLocation() {
@@ -2315,13 +2621,9 @@
                 const latitude = parseFloat(result.lat);
                 const longitude = parseFloat(result.lon);
 
-                // Show confirmation with location name
-                if (confirm(`Found: ${result.display_name}\n\nLatitude: ${latitude.toFixed(6)}\nLongitude: ${longitude.toFixed(6)}\n\nApply to ${geotagSelectedFiles.size} photo(s)?`)) {
-                    // Clear the search input
-                    els.locationSearch.value = '';
-                    // Apply the location
-                    await bulkApplyLocation(latitude, longitude);
-                }
+                // Clear the search input and apply with location name
+                els.locationSearch.value = '';
+                await bulkApplyLocation(latitude, longitude, result.display_name);
 
             } catch (error) {
                 console.error('Geocoding failed:', error);
@@ -2361,35 +2663,6 @@
             } finally {
                 els.btnAutoInfer.disabled = false;
                 els.btnAutoInfer.textContent = '🔍 Auto-Infer Locations';
-            }
-        }
-
-        async function importExifData() {
-            if (!confirm('Index all photos in the library?\n\nThis will scan all images and index their timestamps for temporal clustering.\n\nDoes NOT modify files - just indexes what\'s already there.')) {
-                return;
-            }
-
-            els.btnImportExif.disabled = true;
-            els.btnImportExif.textContent = '⏳ Indexing...';
-
-            try {
-                const response = await fetch('/photos/geotag/import-exif', {
-                    method: 'POST'
-                });
-
-                const data = await response.json();
-
-                alert(`Import complete!\n\nIndexed: ${data.indexed} photos\nWith GPS: ${data.has_gps}\nMissing GPS: ${data.missing_gps}\nErrors: ${data.errors}`);
-
-                // Reload photos
-                await loadGeotagPhotos();
-
-            } catch (error) {
-                console.error('Import failed:', error);
-                alert('Failed to import EXIF data. Check server logs.');
-            } finally {
-                els.btnImportExif.disabled = false;
-                els.btnImportExif.textContent = '📥 Import EXIF Data';
             }
         }
 

@@ -2,9 +2,10 @@
 <component name="HttpTask" extends="Task">
   <interface>
     <field id="request" type="assocarray" />
-    <!-- request fields: url (required), method ("GET"/"POST"), body (string) -->
+    <!-- request fields: url (required), method ("GET"/"POST"), body (string), toFile (string) -->
     <field id="response" type="string" />
     <field id="responseCode" type="integer" />
+    <field id="responseHeaders" type="assocarray" />
     <field id="error" type="string" />
     <field id="authType" type="string" value="basic" /> <!-- basic, thingino, none -->
     <field id="session" type="string" /> <!-- thingino_session cookie value -->
