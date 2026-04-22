@@ -25,10 +25,11 @@ rm -f $ZIP_FILE
 zip -r $ZIP_FILE . -x "*.git*" "*deploy.sh*" "*.pkg*" "dist/*"
 
 echo "2. Deploying to Roku ($ROKU_IP)..."
-RESPONSE=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" --anyauth -u "rokudev:$DEV_PASSWORD" \
+echo "   Uploading $(du -h $ZIP_FILE | cut -f1) package..."
+RESPONSE=$(curl -v --max-time 60 -w "\nHTTP_STATUS:%{http_code}" --anyauth -u "rokudev:$DEV_PASSWORD" \
   -F "mysubmit=Install" \
   -F "archive=@$ZIP_FILE" \
-  "http://$ROKU_IP/plugin_install")
+  "http://$ROKU_IP/plugin_install" 2>&1)
 
 HTTP_STATUS=$(echo "$RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
 BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS\:.*//g')

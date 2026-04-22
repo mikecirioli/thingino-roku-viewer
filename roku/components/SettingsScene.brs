@@ -4,6 +4,8 @@
 sub init()
     m.urlLabel = m.top.findNode("urlLabel")
     m.editUrlBtn = m.top.findNode("editUrlBtn")
+    m.authLabel = m.top.findNode("authLabel")
+    m.editAuthBtn = m.top.findNode("editAuthBtn")
     m.loginBtn = m.top.findNode("loginBtn")
     m.loginStatus = m.top.findNode("loginStatus")
     m.modeList = m.top.findNode("modeList")
@@ -39,6 +41,10 @@ sub init()
     if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = ""
     m.urlLabel.text = m.SERVER_URL
 
+    m.SERVER_AUTH = sec.Read("serverAuth")
+    if m.SERVER_AUTH = invalid then m.SERVER_AUTH = ""
+    m.authLabel.text = maskSecret(m.SERVER_AUTH)
+
     m.sessionCookie = sec.Read("sessionCookie")
     if m.sessionCookie = invalid then m.sessionCookie = ""
     updateLoginStatus()
@@ -70,6 +76,8 @@ sub init()
     savedClockStyle = sec.Read("clockStyle")
     if savedClockStyle = "fade"
         m.clockStyleList.checkedItem = 1
+    else if savedClockStyle = "off"
+        m.clockStyleList.checkedItem = 2
     else
         m.clockStyleList.checkedItem = 0
     end if
@@ -97,6 +105,7 @@ sub init()
     end if
 
     m.editUrlBtn.observeField("buttonSelected", "onEditUrl")
+    m.editAuthBtn.observeField("buttonSelected", "onEditAuth")
     m.loginBtn.observeField("buttonSelected", "onLogin")
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
@@ -171,6 +180,36 @@ sub onUrlDialogButton(event as object)
     m.top.dialog = invalid
 end sub
 
+sub onEditAuth()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Enter Auth Secret (remote access)"
+    dialog.text = m.SERVER_AUTH
+    dialog.isPassword = true
+    dialog.buttons = ["OK", "Cancel"]
+    dialog.observeField("buttonSelected", "onAuthDialogButton")
+    m.top.dialog = dialog
+end sub
+
+sub onAuthDialogButton(event as object)
+    idx = event.getData()
+    dialog = m.top.dialog
+    if idx = 0
+        newAuth = dialog.text
+        if newAuth <> m.SERVER_AUTH
+            m.SERVER_AUTH = newAuth
+            m.authLabel.text = maskSecret(newAuth)
+            sec = CreateObject("roRegistrySection", "settings")
+            sec.Write("serverAuth", newAuth)
+            sec.Flush()
+            m.loading.visible = true
+            m.loading.text = "Loading cameras..."
+            clearCameraOptions()
+            fetchCameraList()
+        end if
+    end if
+    m.top.dialog = invalid
+end sub
+
 sub clearCameraOptions()
     ' Reset mode list to just the two base options
     content = m.modeList.content
@@ -210,7 +249,7 @@ sub onLoginDialogButton(event as object)
 end sub
 
 sub authenticate(user as string, pass as string)
-    url = m.SERVER_URL + "/api/login"
+    url = buildUrl(m.SERVER_URL, "/api/login")
     jsonObj = { username: user, password: pass }
     body = FormatJSON(jsonObj)
 
@@ -243,7 +282,7 @@ end sub
 
 sub fetchCameraList()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/list?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/list?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraListResponse")
     task.request = { url: url, cookie: m.sessionCookie }
@@ -302,7 +341,7 @@ end sub
 
 sub fetchCameraInfo(name as string)
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/" + name + "/info?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/" + name + "/info?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraInfoResponse")
     task.request = { url: url, cookie: m.sessionCookie }
@@ -384,6 +423,8 @@ sub onClockStyleChanged()
     sec = CreateObject("roRegistrySection", "settings")
     if idx = 1
         sec.Write("clockStyle", "fade")
+    else if idx = 2
+        sec.Write("clockStyle", "off")
     else
         sec.Write("clockStyle", "bounce")
     end if
@@ -414,7 +455,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
     if m.currentPage = 1
-        controls = [m.editUrlBtn, m.loginBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList, m.nextPageBtn1]
+        controls = [m.editUrlBtn, m.editAuthBtn, m.loginBtn, m.modeList, m.photoIntervalList, m.cycleIntervalList, m.nextPageBtn1]
     else
         controls = [m.clockStyleList, m.clockOpacityList, m.prevPageBtn2]
     end if

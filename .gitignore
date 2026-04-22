@@ -10,3 +10,4 @@ __pycache__/
 server-config.yaml
 test_auth.py
 ciriolisaver/
+.claude/

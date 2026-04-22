@@ -35,29 +35,17 @@
 
           <Rectangle width="700" height="1" color="#FFFFFF33" />
 
-          <!-- Username -->
-          <Label text="Username (optional):" color="#AAAAAA">
+          <!-- Auth Secret (for remote access) -->
+          <Label text="Auth Secret (optional):" color="#AAAAAA">
             <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
           </Label>
           <Group>
-            <Rectangle id="userBg" width="700" height="44" color="#FFFFFF15" />
-            <Label id="userLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
+            <Rectangle id="authBg" width="700" height="44" color="#FFFFFF15" />
+            <Label id="authLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
               <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
             </Label>
           </Group>
-          <Button id="editUserBtn" text="Edit Username" focusable="true" />
-
-          <!-- Password -->
-          <Label text="Password (optional):" color="#AAAAAA">
-            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-          </Label>
-          <Group>
-            <Rectangle id="passBg" width="700" height="44" color="#FFFFFF15" />
-            <Label id="passLabel" text="" color="#FFFFFF" translation="[12,10]" width="676">
-              <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
-            </Label>
-          </Group>
-          <Button id="editPassBtn" text="Edit Password" focusable="true" />
+          <Button id="editAuthBtn" text="Edit Auth Secret" focusable="true" />
 
           <Button id="nextPageBtn1" text="Clock Settings  >" focusable="true" />
 
@@ -125,6 +113,7 @@
           <ContentNode role="content">
             <ContentNode title="Bounce (DVD-style)" />
             <ContentNode title="Fade (appear/disappear)" />
+            <ContentNode title="Off" />
           </ContentNode>
         </RadioButtonList>
 
@@ -155,5 +144,6 @@
     <!-- Keyboard dialog (created dynamically) -->
   </children>
 
+  <script type="text/brightscript" uri="pkg:/source/Utils.brs" />
   <script type="text/brightscript" uri="SettingsView.brs" />
 </component>

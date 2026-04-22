@@ -107,6 +107,53 @@ class GeotagDatabase:
             ON photos(exif_timestamp)
         ''')
 
+        # Orientation reviews table (Phase 1 + 2)
+        # filename uses os.path.basename() to match the photos table convention.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orientation_reviews (
+                filename      TEXT PRIMARY KEY,
+                review_status TEXT NOT NULL DEFAULT 'unreviewed'
+                    CHECK(review_status IN ('unreviewed','correct','needs_fix','unsure')),
+                reviewed_at   TEXT,
+                auto_flagged  INTEGER DEFAULT 0
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_orientation_status
+            ON orientation_reviews(review_status)
+        ''')
+
+        # Duplicate detection tables
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS photo_hashes (
+                photo_id INTEGER PRIMARY KEY,
+                phash TEXT NOT NULL,
+                image_width INTEGER,
+                image_height INTEGER,
+                megapixels REAL,
+                calculated_at INTEGER,
+                FOREIGN KEY(photo_id) REFERENCES photos(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_phash
+            ON photo_hashes(phash)
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS duplicate_groups (
+                group_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                photo_ids TEXT NOT NULL,
+                hamming_distances TEXT,
+                created_at INTEGER NOT NULL,
+                reviewed_at INTEGER,
+                kept_photo_id INTEGER
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_duplicate_reviewed
+            ON duplicate_groups(reviewed_at)
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -334,6 +381,145 @@ class GeotagDatabase:
         conn.close()
 
         return rows
+
+    # ── Orientation review (Phase 1 + 2) ────────────────────
+
+    ORIENTATION_STATUSES = ('unreviewed', 'correct', 'needs_fix', 'unsure')
+
+    def ensure_orientation_row(self, filename: str) -> bool:
+        """Insert an unreviewed row for this filename if missing. Idempotent."""
+        filename = os.path.basename(filename)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR IGNORE INTO orientation_reviews (filename, review_status)
+            VALUES (?, 'unreviewed')
+        ''', (filename,))
+        inserted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return inserted
+
+    def backfill_orientation_rows(self, filenames):
+        """Insert unreviewed rows for any filenames that don't already have one.
+
+        Args:
+            filenames: iterable of filenames (basenames or full paths).
+
+        Returns:
+            Number of rows inserted.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        inserted = 0
+        for fn in filenames:
+            base = os.path.basename(fn)
+            cursor.execute('''
+                INSERT OR IGNORE INTO orientation_reviews (filename, review_status)
+                VALUES (?, 'unreviewed')
+            ''', (base,))
+            if cursor.rowcount > 0:
+                inserted += 1
+        conn.commit()
+        conn.close()
+        return inserted
+
+    def get_orientation_status(self, filename: str):
+        """Return the review_status string for a filename, or None if not found."""
+        filename = os.path.basename(filename)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT review_status FROM orientation_reviews WHERE filename = ?', (filename,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def set_orientation_review(self, filename: str, status: str) -> bool:
+        """Upsert an orientation review status. Returns True on success."""
+        if status not in self.ORIENTATION_STATUSES:
+            return False
+        filename = os.path.basename(filename)
+        reviewed_at = datetime.utcnow().isoformat() + 'Z'
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO orientation_reviews (filename, review_status, reviewed_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(filename) DO UPDATE SET
+                review_status = excluded.review_status,
+                reviewed_at   = excluded.reviewed_at
+        ''', (filename, status, reviewed_at))
+        conn.commit()
+        conn.close()
+        return True
+
+    def list_orientation_reviews(self, filter_status: str = 'unreviewed',
+                                 limit: int = 50, offset: int = 0):
+        """List orientation review rows filtered by status.
+
+        Args:
+            filter_status: one of 'all' or an orientation status.
+            limit: page size.
+            offset: page offset.
+
+        Returns:
+            (rows, total_count) where rows is a list of
+            {filename, review_status, reviewed_at}.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        if filter_status == 'all':
+            cursor.execute('SELECT COUNT(*) FROM orientation_reviews')
+            total = cursor.fetchone()[0]
+            cursor.execute('''
+                SELECT filename, review_status, reviewed_at
+                FROM orientation_reviews
+                ORDER BY filename
+                LIMIT ? OFFSET ?
+            ''', (limit, offset))
+        else:
+            if filter_status not in self.ORIENTATION_STATUSES:
+                conn.close()
+                return [], 0
+            cursor.execute('''
+                SELECT COUNT(*) FROM orientation_reviews WHERE review_status = ?
+            ''', (filter_status,))
+            total = cursor.fetchone()[0]
+            cursor.execute('''
+                SELECT filename, review_status, reviewed_at
+                FROM orientation_reviews
+                WHERE review_status = ?
+                ORDER BY filename
+                LIMIT ? OFFSET ?
+            ''', (filter_status, limit, offset))
+
+        rows = [
+            {
+                'filename': r['filename'],
+                'review_status': r['review_status'],
+                'reviewed_at': r['reviewed_at'],
+            }
+            for r in cursor.fetchall()
+        ]
+        conn.close()
+        return rows, total
+
+    def orientation_counts(self):
+        """Return dict of counts per orientation status."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT review_status, COUNT(*) FROM orientation_reviews
+            GROUP BY review_status
+        ''')
+        counts = {s: 0 for s in self.ORIENTATION_STATUSES}
+        for status, n in cursor.fetchall():
+            if status in counts:
+                counts[status] = n
+        conn.close()
+        return counts
 
 
 def extract_gps_from_exif(image_path: str) -> Optional[GeoTag]:

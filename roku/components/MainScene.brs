@@ -2,15 +2,9 @@
 
 sub init()
     m.DEFAULT_SERVER_URL = ""
-    m.DEFAULT_USERNAME = ""
-    m.DEFAULT_PASSWORD = ""
     sec = CreateObject("roRegistrySection", "settings")
     m.SERVER_URL = sec.Read("serverUrl")
     if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
-    m.USERNAME = sec.Read("username")
-    if m.USERNAME = invalid or m.USERNAME = "" then m.USERNAME = m.DEFAULT_USERNAME
-    m.PASSWORD = sec.Read("password")
-    if m.PASSWORD = invalid or m.PASSWORD = "" then m.PASSWORD = m.DEFAULT_PASSWORD
 
     m.cameraList = m.top.findNode("cameraList")
     m.cameraListContent = m.top.findNode("cameraListContent")
@@ -62,10 +56,6 @@ sub onSettingsClose()
     sec = CreateObject("roRegistrySection", "settings")
     m.SERVER_URL = sec.Read("serverUrl")
     if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
-    m.USERNAME = sec.Read("username")
-    if m.USERNAME = invalid or m.USERNAME = "" then m.USERNAME = m.DEFAULT_USERNAME
-    m.PASSWORD = sec.Read("password")
-    if m.PASSWORD = invalid or m.PASSWORD = "" then m.PASSWORD = m.DEFAULT_PASSWORD
 
     m.loadingLabel.text = "Loading cameras..."
     m.loadingLabel.visible = true
@@ -75,11 +65,11 @@ end sub
 
 sub fetchAllCameraInfo()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/all_info?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/all_info?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onAllInfoResponse")
     task.observeField("error", "onAllInfoError")
-    task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url }
     task.control = "run"
     m.fetchTask = task
 end sub
@@ -142,7 +132,7 @@ sub onAllInfoResponse(event as object)
         streamUrl = camInfo.stream
         if streamUrl <> invalid and streamUrl <> ""
             if Left(streamUrl, 1) = "/"
-                streamUrl = m.SERVER_URL + streamUrl
+                streamUrl = buildUrl(m.SERVER_URL, streamUrl)
             end if
 
             item = m.cameraListContent.createChild("ContentNode")
@@ -236,7 +226,7 @@ sub refreshPosterPreview()
     if m.currentCamera < 0 then return
     cam = m.cameras[m.currentCamera]
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/" + cam.name + "?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/" + cam.name + "?t=" + ts.asSeconds().toStr())
     if m.posterFront = "a" then m.previewPosterB.uri = url else m.previewPosterA.uri = url
 end sub
 
@@ -339,10 +329,10 @@ end sub
 sub sendPtz(action as string, direction as string)
     if m.currentCamera < 0 then return
     cam = m.cameras[m.currentCamera]
-    url = m.SERVER_URL + "/camera/" + cam.name + "/ptz"
+    url = buildUrl(m.SERVER_URL, "/camera/" + cam.name + "/ptz")
     body = FormatJSON({action: action, direction: direction, speed: 0.5})
     task = CreateObject("roSGNode", "HttpTask")
-    task.request = { url: url, method: "POST", body: body, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url, method: "POST", body: body }
     task.control = "run"
 end sub
 

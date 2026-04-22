@@ -92,6 +92,7 @@ from geotag_manager import (
     cluster_photos_by_time,
     infer_geotags_from_cluster
 )
+from duplicate_detector import DuplicateDetector
 
 PHOTO_DIR = os.environ.get("PHOTO_DIR", "/media")
 PORT = int(os.environ.get("PORT", "8099"))
@@ -502,15 +503,17 @@ def resize_image(path, max_w, max_h, disable_exif=False, fit="contain", crop_thr
 
 _CAMERAS = {}  # name -> {snapshot, stream, stream_type, auth: {type, username, password}}
 _WEB_AUTH = None # {username, password}
+_REMOTE_AUTH_SECRET = "" # shared secret for remote ?auth= access
 _SETTINGS = {} # global settings (screensaver params, etc)
 
 # Geotag database
 GEOTAG_DB_PATH = os.environ.get("GEOTAG_DB_PATH", "/data/geotags/geotags.db")
 geotag_db = None
+duplicate_detector = None
 
 def _load_cameras():
     """Load camera config from YAML file or CAMERAS env var."""
-    global _CAMERAS, _WEB_AUTH, _SETTINGS, HA_URL, HA_TOKEN
+    global _CAMERAS, _WEB_AUTH, _REMOTE_AUTH_SECRET, _SETTINGS, HA_URL, HA_TOKEN
 
     # Try YAML file first
     if os.path.isfile(CAMERAS_FILE):
@@ -524,6 +527,9 @@ def _load_cameras():
             if cfg and "web_auth" in cfg:
                 _WEB_AUTH = cfg["web_auth"]
                 print(f"  web auth configured from {CAMERAS_FILE}")
+            if cfg and "remote_auth_secret" in cfg:
+                _REMOTE_AUTH_SECRET = cfg["remote_auth_secret"]
+                print(f"  remote auth secret configured from {CAMERAS_FILE}")
             if cfg and "settings" in cfg:
                 _SETTINGS = cfg["settings"]
                 print(f"  global settings loaded from {CAMERAS_FILE}")
@@ -577,6 +583,10 @@ def _save_cameras():
         
         full_cfg["cameras"] = _CAMERAS
         full_cfg["settings"] = _SETTINGS
+        if _REMOTE_AUTH_SECRET:
+            full_cfg["remote_auth_secret"] = _REMOTE_AUTH_SECRET
+        elif "remote_auth_secret" in full_cfg:
+            del full_cfg["remote_auth_secret"]
 
         with open(CAMERAS_FILE, "w") as f:
 
@@ -802,13 +812,22 @@ def camera_snapshot(name, max_w=None, max_h=None, disable_exif=True, fit="contai
     return raw, "image/jpeg"
 
 
-def camera_info(name):
-    """Return camera info dict for /camera/<name>/info endpoint."""
+def camera_info(name, remote=False):
+    """Return camera info dict for /camera/<name>/info endpoint.
+    When remote=True, rewrites absolute go2rtc stream URLs to relative
+    paths so clients can reach streams via the same server base URL."""
     cam = _CAMERAS.get(name)
     if not cam:
         return None
-    
+
     stream_url = cam.get("stream", "")
+
+    if remote and stream_url:
+        parsed = urlparse(stream_url)
+        qs = parse_qs(parsed.query)
+        src = qs.get("src", [None])[0]
+        if src:
+            stream_url = f"/api/stream.m3u8?src={src}"
 
     return {
         "name": name,
@@ -1286,6 +1305,25 @@ class PhotoHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def send_header(self, keyword, value):
+        kl = keyword.lower()
+        if kl == 'content-type':
+            self._response_content_type = value
+        if kl == 'cache-control':
+            self._has_cache_control = True
+        super().send_header(keyword, value)
+
+    def end_headers(self):
+        ctype = getattr(self, '_response_content_type', '') or ''
+        has_cc = getattr(self, '_has_cache_control', False)
+        ctype_lower = ctype.lower()
+        if not has_cc and (('application/json' in ctype_lower) or ('text/html' in ctype_lower)):
+            super().send_header('Cache-Control', 'no-cache, must-revalidate')
+            super().send_header('Vary', 'Cookie')
+        self._response_content_type = ''
+        self._has_cache_control = False
+        super().end_headers()
+
     def _merge_settings(self, params):
         """Merge global _SETTINGS as defaults into params."""
         for key, value in _SETTINGS.items():
@@ -1338,6 +1376,14 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.handle_geotag_auto_infer()
         elif path == "/photos/geotag/batch-update":
             self.handle_geotag_batch_update()
+        elif path == "/orientation/review":
+            self.handle_orientation_review()
+        elif path == "/orientation/apply-fix":
+            self.handle_orientation_apply_fix()
+        elif path == "/orientation/apply-all":
+            self.handle_orientation_apply_all()
+        elif path == "/duplicates/resolve":
+            self.handle_duplicates_resolve()
         else:
             self.send_error(404)
 
@@ -1435,7 +1481,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
             if _WEB_AUTH and user == _WEB_AUTH.get('username') and pwd == _WEB_AUTH.get('password'):
                 import hashlib
                 session_val = hashlib.sha256(f"{user}:{pwd}".encode()).hexdigest()
-                cookie = f'session={session_val}; Path=/; HttpOnly; Secure; SameSite=Lax'
+                cookie = f'session={session_val}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000'
                 
                 resp = json.dumps({'success': True, 'cookie': cookie}).encode('utf-8')
                 self.send_response(200)
@@ -1463,7 +1509,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
             import hashlib
             session = hashlib.sha256(f"{user}:{pwd}".encode()).hexdigest()
             self.send_response(302)
-            self.send_header('Set-Cookie', f'session={session}; Path=/; HttpOnly; Secure; SameSite=Lax')
+            self.send_header('Set-Cookie', f'session={session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000')
             self.send_header('Location', '/web')
             self.end_headers()
         else:
@@ -1632,7 +1678,7 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _is_request_authorized(self):
-        """Check for session cookie or local IP address."""
+        """Check for session cookie, shared secret, or local IP address."""
         # If no auth is configured in yaml, allow all requests.
         if not _WEB_AUTH:
             return True
@@ -1649,18 +1695,24 @@ class PhotoHandler(BaseHTTPRequestHandler):
                 if cookie['session'].value == expected:
                     return True
 
-        # 2. If no cookie, check if the request is from a local IP
+        # 2. Check for ?auth=<shared_secret> query param (remote Roku access)
+        if _REMOTE_AUTH_SECRET:
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            auth_param = params.get('auth', [None])[0]
+            if auth_param and auth_param == _REMOTE_AUTH_SECRET:
+                return True
+
+        # 3. If no cookie or secret, check if the request is from a local IP
         client_ip_str = self.headers.get('X-Forwarded-For', self.client_address[0]).split(',')[0].strip()
         if client_ip_str:
             try:
                 from ipaddress import ip_address
-                # Allow requests from any private (LAN) IP address.
                 if ip_address(client_ip_str).is_private:
                     return True
             except (ValueError, ImportError):
-                # Failed to parse IP, proceed to deny access
                 pass
-        
+
         return False
 
     def serve_auth_verify(self):
@@ -1748,7 +1800,7 @@ button:hover { background: #0056b3; }
         path = parsed.path.rstrip("/")
 
         # Define which paths require authentication
-        protected_prefixes = ('/web', '/random', '/camera/', '/timelapse/', '/ha/', '/library', '/ticker')
+        protected_prefixes = ('/web', '/random', '/camera/', '/timelapse/', '/ha/', '/library', '/ticker', '/orientation/', '/duplicates/')
         is_protected = path.startswith(protected_prefixes)
         
         # Exception: /web/ is protected, but assets inside /web/ (like logo.png) are not,
@@ -1814,6 +1866,14 @@ button:hover { background: #0056b3; }
             self.serve_photos_geotags(parsed)
         elif path.startswith("/photo/") and path.endswith("/geotag"):
             self.serve_photo_geotag(path)
+        elif path == "/orientation/photos":
+            self.serve_orientation_photos(parsed)
+        elif path == "/orientation/counts":
+            self.serve_orientation_counts()
+        elif path == "/orientation/thumbnail":
+            self.serve_orientation_thumbnail(parsed)
+        elif path == "/duplicates/groups":
+            self.serve_duplicates_groups()
         elif path.startswith("/web/"):
             self.serve_web_static(path)
         elif path == "/login":
@@ -1835,12 +1895,14 @@ button:hover { background: #0056b3; }
         self.wfile.write(json.dumps(_CAMERAS).encode())
 
     def serve_settings(self):
-        """GET /camera/settings — return global settings."""
+        """GET /camera/settings — return global settings + remote_auth_secret."""
+        result = dict(_SETTINGS)
+        result['remote_auth_secret'] = _REMOTE_AUTH_SECRET
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(json.dumps(_SETTINGS).encode())
+        self.wfile.write(json.dumps(result).encode())
 
     def handle_settings_post(self):
         """POST /camera/settings — update global settings."""
@@ -1856,7 +1918,9 @@ button:hover { background: #0056b3; }
             self.send_error(400, "Expected JSON object")
             return
 
-        global _SETTINGS
+        global _SETTINGS, _REMOTE_AUTH_SECRET
+        if 'remote_auth_secret' in data:
+            _REMOTE_AUTH_SECRET = data.pop('remote_auth_secret', '')
         _SETTINGS = data
         if _save_cameras():
             self.send_response(200)
@@ -2227,6 +2291,324 @@ button:hover { background: #0056b3; }
             print(f"ERROR: delete failed for {full}: {e}")
             self.send_error(500, f"Delete failed: {e}")
 
+    # ── Orientation review endpoints (Phase 1+2) ─────────────
+
+    def _orientation_json(self, payload, status=200):
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_orientation_photos(self, parsed):
+        """GET /orientation/photos?filter=<status>&limit=50&offset=0"""
+        if geotag_db is None:
+            self.send_error(503, "Geotag DB not initialized")
+            return
+        params = parse_qs(parsed.query)
+        filter_status = (params.get("filter", ["unreviewed"])[0] or "unreviewed").lower()
+        try:
+            limit = int(params.get("limit", ["50"])[0])
+            offset = int(params.get("offset", ["0"])[0])
+        except ValueError:
+            self.send_error(400, "limit/offset must be integers")
+            return
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        try:
+            rows, total = geotag_db.list_orientation_reviews(
+                filter_status=filter_status, limit=limit, offset=offset
+            )
+        except Exception as e:
+            print(f"ERROR: orientation list failed: {e}")
+            self.send_error(500, f"List failed: {e}")
+            return
+        self._orientation_json({
+            "photos": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "filter": filter_status,
+        })
+
+    def serve_orientation_counts(self):
+        """GET /orientation/counts — counts per review status."""
+        if geotag_db is None:
+            self.send_error(503, "Geotag DB not initialized")
+            return
+        try:
+            counts = geotag_db.orientation_counts()
+        except Exception as e:
+            print(f"ERROR: orientation counts failed: {e}")
+            self.send_error(500, f"Counts failed: {e}")
+            return
+        self._orientation_json(counts)
+
+    def serve_orientation_thumbnail(self, parsed):
+        """GET /orientation/thumbnail?name=X&mode=raw|rendered — downsized JPEG."""
+        params = parse_qs(parsed.query)
+        name = params.get("name", [None])[0]
+        mode = (params.get("mode", ["rendered"])[0] or "rendered").lower()
+        if not name:
+            self.send_error(400, "Missing 'name' parameter")
+            return
+        if mode not in ("raw", "rendered"):
+            self.send_error(400, "mode must be 'raw' or 'rendered'")
+            return
+
+        # Resolve name: incoming is a basename; find it via photo cache.
+        safe_name = os.path.basename(name)
+        full = None
+        for p in get_photos():
+            if os.path.basename(p) == safe_name:
+                full = p
+                break
+        if not full:
+            self.send_error(404, "Photo not found")
+            return
+
+        try:
+            from PIL import Image, ImageOps
+        except ImportError:
+            self.send_error(500, "Pillow not available")
+            return
+
+        try:
+            with Image.open(full) as img:
+                if mode == "rendered":
+                    # Apply the same EXIF transpose the display pipeline uses.
+                    img = ImageOps.exif_transpose(img)
+                # 'raw' mode: no EXIF rotation — show the bytes as stored.
+                img = img.convert("RGB")
+                img.thumbnail((600, 600), Image.LANCZOS)
+                buf = BytesIO()
+                img.save(buf, "JPEG", quality=80)
+                data = buf.getvalue()
+        except Exception as e:
+            print(f"ERROR: orientation thumbnail failed for {full}: {e}")
+            self.send_error(500, f"Thumbnail failed: {e}")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Cache-Control", "max-age=300")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_orientation_review(self):
+        """POST /orientation/review — body {filename, status}. Upsert."""
+        if geotag_db is None:
+            self.send_error(503, "Geotag DB not initialized")
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        filename = (data.get("filename") or "").strip()
+        status = (data.get("status") or "").strip().lower()
+        if not filename or not status:
+            self.send_error(400, "Missing filename or status")
+            return
+        if status not in ("correct", "needs_fix", "unsure", "unreviewed"):
+            self.send_error(400, "Invalid status")
+            return
+        try:
+            ok = geotag_db.set_orientation_review(filename, status)
+        except Exception as e:
+            print(f"ERROR: orientation review failed: {e}")
+            self.send_error(500, f"Review failed: {e}")
+            return
+        if not ok:
+            self.send_error(400, "Failed to set review")
+            return
+        self._orientation_json({
+            "ok": True,
+            "filename": os.path.basename(filename),
+            "status": status,
+        })
+
+    def handle_orientation_apply_fix(self):
+        """POST /orientation/apply-fix — bake EXIF rotation into pixel data."""
+        if geotag_db is None:
+            self.send_error(503, "Geotag DB not initialized")
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        filename = (data.get("filename") or "").strip()
+        if not filename:
+            self.send_error(400, "Missing filename")
+            return
+        safe_name = os.path.basename(filename)
+        full = None
+        for p in get_photos():
+            if os.path.basename(p) == safe_name:
+                full = p
+                break
+        if not full:
+            self.send_error(404, "Photo not found")
+            return
+        try:
+            from PIL import Image, ImageOps
+            with Image.open(full) as img:
+                exif = img.getexif()
+                orient_tag = exif.get(0x0112, 1)
+                if orient_tag == 1:
+                    self._orientation_json({
+                        "ok": True, "skipped": True,
+                        "message": "Image already has normal orientation",
+                        "filename": safe_name, "status": "correct",
+                    })
+                    geotag_db.set_orientation_review(safe_name, "correct")
+                    return
+                transposed = ImageOps.exif_transpose(img)
+                if full.lower().endswith((".jpg", ".jpeg")):
+                    transposed.save(full, "JPEG", quality=95, exif=b"")
+                else:
+                    transposed.save(full)
+            thumb_path = ThumbnailGenerator.thumb_path_for(full)
+            if os.path.exists(thumb_path):
+                os.remove(thumb_path)
+            with Image.open(full) as img:
+                img.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+                img.save(thumb_path, "JPEG", quality=50)
+            geotag_db.set_orientation_review(safe_name, "correct")
+            global _photo_cache, _cache_time
+            _cache_time = 0
+            print(f"  orientation: fixed {safe_name} (was tag={orient_tag})")
+        except Exception as e:
+            print(f"ERROR: orientation apply-fix failed for {safe_name}: {e}")
+            self.send_error(500, f"Apply fix failed: {e}")
+            return
+        self._orientation_json({
+            "ok": True, "filename": safe_name, "status": "correct",
+        })
+
+    def handle_orientation_apply_all(self):
+        """POST /orientation/apply-all — bake EXIF rotation for all needs_fix photos."""
+        if geotag_db is None:
+            self.send_error(503, "Geotag DB not initialized")
+            return
+        try:
+            rows, total = geotag_db.list_orientation_reviews(
+                filter_status='needs_fix', limit=10000, offset=0
+            )
+        except Exception as e:
+            self.send_error(500, f"List failed: {e}")
+            return
+        if not rows:
+            self._orientation_json({"ok": True, "fixed": 0, "skipped": 0, "failed": 0})
+            return
+
+        from PIL import Image, ImageOps
+        photos = get_photos()
+        photo_map = {os.path.basename(p): p for p in photos}
+        fixed = 0
+        skipped = 0
+        failed = 0
+        for row in rows:
+            name = row['filename']
+            full = photo_map.get(name)
+            if not full:
+                failed += 1
+                continue
+            try:
+                with Image.open(full) as img:
+                    exif = img.getexif()
+                    orient_tag = exif.get(0x0112, 1)
+                    if orient_tag == 1:
+                        geotag_db.set_orientation_review(name, "correct")
+                        skipped += 1
+                        continue
+                    transposed = ImageOps.exif_transpose(img)
+                    if full.lower().endswith((".jpg", ".jpeg")):
+                        transposed.save(full, "JPEG", quality=95, exif=b"")
+                    else:
+                        transposed.save(full)
+                thumb_path = ThumbnailGenerator.thumb_path_for(full)
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+                with Image.open(full) as img:
+                    img.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+                    img.save(thumb_path, "JPEG", quality=50)
+                geotag_db.set_orientation_review(name, "correct")
+                fixed += 1
+            except Exception as e:
+                print(f"ERROR: apply-all failed for {name}: {e}")
+                failed += 1
+        global _photo_cache, _cache_time
+        _cache_time = 0
+        print(f"  orientation: apply-all complete — fixed={fixed} skipped={skipped} failed={failed}")
+        self._orientation_json({"ok": True, "fixed": fixed, "skipped": skipped, "failed": failed})
+
+    # ── Duplicate detection endpoints ─────────────────────────
+
+    def serve_duplicates_groups(self):
+        """GET /duplicates/groups — list unreviewed duplicate groups"""
+        if duplicate_detector is None:
+            self.send_error(503, "Duplicate detector not initialized")
+            return
+        try:
+            groups = duplicate_detector.get_unreviewed_groups()
+            data = json.dumps({"groups": groups}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            print(f"ERROR: duplicates groups list failed: {e}")
+            self.send_error(500, f"List failed: {e}")
+
+    def handle_duplicates_resolve(self):
+        """POST /duplicates/resolve — resolve a duplicate group"""
+        if duplicate_detector is None:
+            self.send_error(503, "Duplicate detector not initialized")
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        group_id = data.get("group_id")
+        kept_photo_id = data.get("kept_photo_id")
+        deleted_photo_ids = data.get("deleted_photo_ids", [])
+        if not group_id or not kept_photo_id or not deleted_photo_ids:
+            self.send_error(400, "Missing group_id, kept_photo_id, or deleted_photo_ids")
+            return
+        try:
+            success = duplicate_detector.resolve_duplicate_group(
+                group_id, kept_photo_id, deleted_photo_ids
+            )
+            if not success:
+                self.send_error(500, "Failed to resolve group")
+                return
+            global _photo_cache, _cache_time
+            _cache_time = 0
+            result = json.dumps({"ok": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(result)))
+            self.end_headers()
+            self.wfile.write(result)
+        except Exception as e:
+            print(f"ERROR: duplicate resolve failed: {e}")
+            self.send_error(500, f"Resolve failed: {e}")
+
     def serve_ha(self, path):
         handlers = {
             "/ha/weather": ha_weather,
@@ -2317,10 +2699,19 @@ button:hover { background: #0056b3; }
         self.end_headers()
         self.wfile.write(data)
 
+    def _is_remote_request(self):
+        """True when the request carries a ?auth= shared secret (remote client)."""
+        if not _REMOTE_AUTH_SECRET:
+            return False
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        auth_param = params.get('auth', [None])[0]
+        return bool(auth_param and auth_param == _REMOTE_AUTH_SECRET)
+
     def serve_camera_info(self, path):
         # /camera/front-door/info -> name = "front-door"
         name = path[len("/camera/"):].rsplit("/info", 1)[0]
-        info = camera_info(name)
+        info = camera_info(name, remote=self._is_remote_request())
         if not info:
             self.send_error(404, "Camera not found: {}".format(name))
             return
@@ -2541,9 +2932,10 @@ button:hover { background: #0056b3; }
 
     def serve_all_camera_info(self):
         """Serve a list of all cameras with their full info."""
+        remote = self._is_remote_request()
         all_info = []
         for name in _CAMERAS:
-            info = camera_info(name)
+            info = camera_info(name, remote=remote)
             if info:
                 all_info.append(info)
         
@@ -2941,7 +3333,48 @@ if __name__ == "__main__":
             else:
                 print(f"  geotags: all {len(photos)} photos already indexed")
 
+            # Backfill orientation review rows (Phase 1+2).
+            try:
+                inserted = geotag_db.backfill_orientation_rows(
+                    os.path.basename(p) for p in photos
+                )
+                if inserted:
+                    print(f"  orientation: backfilled {inserted} unreviewed rows")
+                else:
+                    print(f"  orientation: all {len(photos)} photos already have review rows")
+            except Exception as e:
+                print(f"  orientation: backfill failed: {e}")
+
+            # Auto-flag photos with non-normal EXIF orientation.
+            try:
+                from PIL import Image
+                flagged = 0
+                for photo_path in photos:
+                    basename = os.path.basename(photo_path)
+                    row = geotag_db.get_orientation_status(basename)
+                    if row and row != 'unreviewed':
+                        continue
+                    try:
+                        with Image.open(photo_path) as img:
+                            exif = img.getexif()
+                            orient_tag = exif.get(0x0112, 1)
+                        if orient_tag != 1:
+                            geotag_db.set_orientation_review(basename, 'needs_fix')
+                            flagged += 1
+                    except Exception:
+                        pass
+                if flagged:
+                    print(f"  orientation: auto-flagged {flagged} photos with non-normal EXIF orientation")
+                else:
+                    print(f"  orientation: no new photos to auto-flag")
+            except Exception as e:
+                print(f"  orientation: auto-flag failed: {e}")
+
         threading.Thread(target=_index_photos_background, daemon=True).start()
+
+        # Start duplicate detector daemon
+        duplicate_detector = DuplicateDetector(geotag_db, PHOTO_DIR, interval=300, batch_size=50)
+        duplicate_detector.start()
     except Exception as e:
         print(f"Warning: Failed to initialize geotag database: {e}")
 

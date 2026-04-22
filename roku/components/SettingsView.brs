@@ -2,15 +2,11 @@
 
 sub init()
     m.DEFAULT_SERVER_URL = ""
-    m.DEFAULT_USERNAME = ""
-    m.DEFAULT_PASSWORD = ""
 
     m.urlLabel = m.top.findNode("urlLabel")
     m.editUrlBtn = m.top.findNode("editUrlBtn")
-    m.userLabel = m.top.findNode("userLabel")
-    m.editUserBtn = m.top.findNode("editUserBtn")
-    m.passLabel = m.top.findNode("passLabel")
-    m.editPassBtn = m.top.findNode("editPassBtn")
+    m.authLabel = m.top.findNode("authLabel")
+    m.editAuthBtn = m.top.findNode("editAuthBtn")
     m.modeList = m.top.findNode("modeList")
     m.loading = m.top.findNode("loading")
     m.photoIntervalList = m.top.findNode("photoIntervalList")
@@ -44,13 +40,9 @@ sub init()
     if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
     m.urlLabel.text = m.SERVER_URL
 
-    m.USERNAME = sec.Read("username")
-    if m.USERNAME = invalid or m.USERNAME = "" then m.USERNAME = m.DEFAULT_USERNAME
-    m.userLabel.text = m.USERNAME
-
-    m.PASSWORD = sec.Read("password")
-    if m.PASSWORD = invalid or m.PASSWORD = "" then m.PASSWORD = m.DEFAULT_PASSWORD
-    if m.PASSWORD <> "" then m.passLabel.text = String(m.PASSWORD.len(), "*")
+    m.SERVER_AUTH = sec.Read("serverAuth")
+    if m.SERVER_AUTH = invalid then m.SERVER_AUTH = ""
+    m.authLabel.text = maskSecret(m.SERVER_AUTH)
 
     m.savedMode = sec.Read("mode")
     if m.savedMode <> "camera" and m.savedMode <> "video" then m.savedMode = "photo"
@@ -77,6 +69,8 @@ sub init()
     savedClockStyle = sec.Read("clockStyle")
     if savedClockStyle = "fade"
         m.clockStyleList.checkedItem = 1
+    else if savedClockStyle = "off"
+        m.clockStyleList.checkedItem = 2
     else
         m.clockStyleList.checkedItem = 0
     end if
@@ -103,8 +97,7 @@ sub init()
     end if
 
     m.editUrlBtn.observeField("buttonSelected", "onEditUrl")
-    m.editUserBtn.observeField("buttonSelected", "onEditUsername")
-    m.editPassBtn.observeField("buttonSelected", "onEditPassword")
+    m.editAuthBtn.observeField("buttonSelected", "onEditAuth")
     m.modeList.observeField("checkedItem", "onModeChanged")
     m.photoIntervalList.observeField("checkedItem", "onPhotoIntervalChanged")
     m.cycleIntervalList.observeField("checkedItem", "onCycleIntervalChanged")
@@ -177,61 +170,31 @@ sub onUrlDialogButton(event as object)
     m.editUrlBtn.setFocus(true)
 end sub
 
-sub onEditUsername()
+sub onEditAuth()
     dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
-    dialog.title = "Enter Username"
-    dialog.text = m.USERNAME
-    dialog.buttons = ["OK", "Cancel"]
-    dialog.observeField("buttonSelected", "onUsernameDialogButton")
-    m.top.getScene().dialog = dialog
-end sub
-
-sub onUsernameDialogButton(event as object)
-    dialog = m.top.getScene().dialog
-    if event.getData() = 0
-        newUser = dialog.text
-        if newUser <> m.USERNAME
-            m.USERNAME = newUser
-            m.userLabel.text = newUser
-            sec = CreateObject("roRegistrySection", "settings")
-            sec.Write("username", newUser)
-            sec.Flush()
-            refreshCameraList()
-        end if
-    end if
-    m.top.getScene().dialog = invalid
-    m.editUrlBtn.setFocus(true)
-end sub
-
-sub onEditPassword()
-    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
-    dialog.title = "Enter Password"
-    dialog.text = m.PASSWORD
+    dialog.title = "Enter Auth Secret (remote access)"
+    dialog.text = m.SERVER_AUTH
     dialog.isPassword = true
     dialog.buttons = ["OK", "Cancel"]
-    dialog.observeField("buttonSelected", "onPasswordDialogButton")
+    dialog.observeField("buttonSelected", "onAuthDialogButton")
     m.top.getScene().dialog = dialog
 end sub
 
-sub onPasswordDialogButton(event as object)
+sub onAuthDialogButton(event as object)
     dialog = m.top.getScene().dialog
     if event.getData() = 0
-        newPass = dialog.text
-        if newPass <> m.PASSWORD
-            m.PASSWORD = newPass
-            if newPass = ""
-                m.passLabel.text = ""
-            else
-                m.passLabel.text = String(newPass.len(), "*")
-            end if
+        newAuth = dialog.text
+        if newAuth <> m.SERVER_AUTH
+            m.SERVER_AUTH = newAuth
+            m.authLabel.text = maskSecret(newAuth)
             sec = CreateObject("roRegistrySection", "settings")
-            sec.Write("password", newPass)
+            sec.Write("serverAuth", newAuth)
             sec.Flush()
             refreshCameraList()
         end if
     end if
     m.top.getScene().dialog = invalid
-    m.editUrlBtn.setFocus(true)
+    m.editAuthBtn.setFocus(true)
 end sub
 
 sub refreshCameraList()
@@ -256,11 +219,11 @@ end sub
 
 sub fetchCameraList()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/list?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/list?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraListResponse")
     task.observeField("error", "onCameraListError")
-    task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url }
     task.control = "run"
 end sub
 
@@ -311,11 +274,11 @@ end sub
 
 sub fetchCameraInfo(name as string)
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/" + name + "/info?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/" + name + "/info?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraInfoResponse")
     task.observeField("error", "onCameraInfoError")
-    task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url }
     task.control = "run"
 end sub
 
@@ -390,6 +353,8 @@ sub onClockStyleChanged()
     sec = CreateObject("roRegistrySection", "settings")
     if idx = 1
         sec.Write("clockStyle", "fade")
+    else if idx = 2
+        sec.Write("clockStyle", "off")
     else
         sec.Write("clockStyle", "bounce")
     end if
@@ -411,8 +376,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = "back"
         sec = CreateObject("roRegistrySection", "settings")
         sec.Write("serverUrl", m.SERVER_URL)
-        sec.Write("username", m.USERNAME)
-        sec.Write("password", m.PASSWORD)
+        sec.Write("serverAuth", m.SERVER_AUTH)
         sec.Flush()
 
         if m.currentPage = 2
@@ -428,7 +392,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if m.currentPage = 1
         ' Page 1: two-column navigation
-        buttons = [m.editUrlBtn, m.editUserBtn, m.editPassBtn, m.nextPageBtn1]
+        buttons = [m.editUrlBtn, m.editAuthBtn, m.nextPageBtn1]
         lists = [m.modeList, m.photoIntervalList, m.cycleIntervalList]
 
         btnIdx = -1
