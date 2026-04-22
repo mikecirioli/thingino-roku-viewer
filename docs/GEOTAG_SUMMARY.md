@@ -120,10 +120,11 @@ Response shows:
 }
 ```
 
-**Step 3: Review suggestions in web UI** (Phase 2 - not built yet)
-- See all 10 suggestions on a map
+**Step 3: Review suggestions in web UI**
+- Open the Geotags tab at `/web`
+- See suggestions on the Leaflet map
 - Approve/reject each one
-- Or manually adjust if location is slightly off
+- Manually adjust location if needed
 
 **Step 4: Apply approved suggestions**
 ```bash
@@ -143,36 +144,23 @@ curl -X POST http://localhost:8099/photos/geotag/batch-update \
 
 ## What's Next
 
-### Phase 2: Web UI (Not Started)
+### Phase 2: Web UI (Complete)
 
-Build a web interface for:
-1. **Photo grid with status badges**
-   - Green = has GPS
-   - Yellow = auto-inference suggestion available
-   - Red = no GPS data
+The Geotags tab in the web UI now includes:
+1. **Photo grid with status badges** -- green for geotagged, red for missing GPS
+2. **Interactive Leaflet.js map** -- photo pins on world map, click to view/edit
+3. **Auto-inference review workflow** -- see suggestions with confidence, approve/reject
+4. **Manual and batch editing** -- click map or enter coordinates, batch apply to groups
 
-2. **Interactive map (Leaflet.js)**
-   - Show all geotagged photos on world map
-   - Click photo to see on map
-   - Click map to set location
+### Phase 3: Roku Screensaver (Partial)
 
-3. **Auto-inference review workflow**
-   - See all suggestions
-   - Approve/reject with one click
-   - Batch apply to multiple photos
+Current:
+- Screensaver displays "City, Country, DD-MM-YYYY" via `X-Photo-Info` response header
 
-4. **Manual editing**
-   - Click on map to set location
-   - Or enter lat/lon manually
-   - Reverse geocoding for location names
-
-### Phase 3: Roku Screensaver (After Web UI)
-
-Add map overlay to screensaver:
-1. Generate static world map image (1920x1080)
-2. Calculate pin position from lat/lon
-3. Overlay on photo during screensaver
-4. Display location name if available
+Still to do:
+- World map overlay image generation
+- Pin placement on photos during screensaver
+- Location name display on map
 
 ## Files Created
 
@@ -259,13 +247,9 @@ A: Works with JPEG, TIFF, PNG (if they support EXIF). Most photos are JPEG so yo
 **Q: Can I see the GPS in other photo apps?**
 A: Yes! Standard EXIF format works with Google Photos, Apple Photos, Windows Photos, etc.
 
-## Ready to Use
+## Current Status
 
-The server API is complete and tested. You can:
-1. Index your photo library
-2. Get auto-inference suggestions
-3. Manually apply geotags via API
-
-What's missing is the **web UI** to make this easy to use. That's Phase 2.
-
-Want to test it on your photos? Or ready to build the web UI?
+The full geotag management system is built and operational:
+1. Server API complete for indexing, auto-inference, batch editing
+2. Web UI Geotags tab with interactive Leaflet map and photo grid
+3. Roku screensaver shows photo location info when available
