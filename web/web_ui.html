@@ -411,6 +411,8 @@
                 <button class="tab-btn" data-tab="timelapse">Time-lapse</button>
                 <button class="tab-btn" data-tab="geotags">Geotags</button>
                 <button class="tab-btn" data-tab="library">Library</button>
+                <button class="tab-btn" data-tab="orientation">Orientation</button>
+                <button class="tab-btn" data-tab="duplicates">Duplicates</button>
                 <button class="tab-btn" data-tab="config">Configuration</button>
             </div>
             <div id="live-view">
@@ -567,6 +569,179 @@
                 </div>
             </div>
 
+            <div id="orientation-view" style="display: none; padding: 20px; overflow-y: auto; flex: 1 1 0; min-height: 0;">
+                <div class="tl-section">
+                    <h2>Orientation Review</h2>
+                    <p style="font-size: 0.85em; color: #9ab; margin-top: -10px; margin-bottom: 20px;">
+                        Compare the raw (unrotated) and rendered versions of each photo and mark
+                        whether the current rendered orientation is correct.
+                    </p>
+
+                    <div id="orient-controls" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+                        <label style="color: var(--accent-color);">Filter:</label>
+                        <select id="orient-filter">
+                            <option value="unreviewed" selected>Unreviewed</option>
+                            <option value="all">All</option>
+                            <option value="correct">Correct</option>
+                            <option value="needs_fix">Needs Fix</option>
+                            <option value="unsure">Unsure</option>
+                        </select>
+                        <span class="orient-chip" data-chip="unreviewed">Unreviewed: <span data-count="unreviewed">0</span></span>
+                        <span class="orient-chip" data-chip="correct">Correct: <span data-count="correct">0</span></span>
+                        <span class="orient-chip" data-chip="needs_fix">Needs Fix: <span data-count="needs_fix">0</span></span>
+                        <span class="orient-chip" data-chip="unsure">Unsure: <span data-count="unsure">0</span></span>
+                        <button class="btn" id="orient-apply-all-btn" style="display: none; background: #e65100; padding: 6px 14px; font-size: 0.85em;">Apply Fix to All</button>
+                    </div>
+
+                    <div id="orient-status" style="color: var(--accent-color); margin-bottom: 15px;"></div>
+                    <div id="orient-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;"></div>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button class="btn" id="orient-load-more" style="display: none;">Load More</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="duplicates-view" style="display: none; padding: 20px; overflow-y: auto; flex: 1 1 0; min-height: 0;">
+                <div class="tl-section">
+                    <h2>Duplicate Detection</h2>
+                    <p style="font-size: 0.85em; color: #9ab; margin-top: -10px; margin-bottom: 20px;">
+                        Photos are grouped by visual similarity using perceptual hashing. Review each group and choose which to keep.
+                    </p>
+                    <div id="dup-status" style="color: var(--accent-color); margin-bottom: 15px;"></div>
+                    <div id="dup-grid" style="display: flex; flex-direction: column; gap: 20px;"></div>
+                </div>
+            </div>
+
+            <style>
+                .dup-group {
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid var(--border-color);
+                    border-radius: 6px;
+                    padding: 16px;
+                }
+                .dup-group-header {
+                    font-size: 0.9em;
+                    color: var(--accent-color);
+                    margin-bottom: 12px;
+                }
+                .dup-photos {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 12px;
+                }
+                .dup-photo-card {
+                    background: rgba(0,0,0,0.3);
+                    border: 2px solid transparent;
+                    border-radius: 4px;
+                    padding: 8px;
+                    cursor: pointer;
+                    transition: border-color 0.2s;
+                }
+                .dup-photo-card:hover {
+                    border-color: var(--accent-color);
+                }
+                .dup-photo-card.selected {
+                    border-color: #4CAF50;
+                    background: rgba(76,175,80,0.1);
+                }
+                .dup-photo-card img {
+                    width: 100%;
+                    aspect-ratio: 16/9;
+                    object-fit: contain;
+                    background: #000;
+                    border-radius: 3px;
+                    margin-bottom: 6px;
+                }
+                .dup-photo-info {
+                    font-size: 0.75em;
+                    color: #9ab;
+                    line-height: 1.4;
+                }
+                .dup-photo-filename {
+                    color: #ccc;
+                    margin-bottom: 4px;
+                    word-break: break-all;
+                }
+                .dup-group-actions {
+                    margin-top: 12px;
+                    display: flex;
+                    gap: 8px;
+                }
+                .dup-group-actions .btn {
+                    padding: 6px 12px;
+                    font-size: 0.85em;
+                }
+
+                .orient-chip {
+                    background: rgba(58, 124, 165, 0.25);
+                    color: #fff;
+                    padding: 4px 10px;
+                    border-radius: 12px;
+                    font-size: 0.85em;
+                    border: 1px solid var(--border-color);
+                }
+                .orient-card {
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid var(--border-color);
+                    border-radius: 6px;
+                    padding: 10px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                .orient-card.status-correct   { border-color: #4CAF50; }
+                .orient-card.status-needs_fix { border-color: #FF6700; }
+                .orient-card.status-unsure    { border-color: #9ab; }
+                .orient-thumbs {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 6px;
+                }
+                .orient-thumbs > div {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .orient-thumbs img {
+                    width: 100%;
+                    max-height: 220px;
+                    object-fit: contain;
+                    background: #000;
+                    border-radius: 4px;
+                }
+                .orient-thumbs .orient-label {
+                    font-size: 0.75em;
+                    color: #9ab;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .orient-filename {
+                    font-size: 0.85em;
+                    color: #ccc;
+                    word-break: break-all;
+                }
+                .orient-actions {
+                    display: flex;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                }
+                .orient-actions .btn {
+                    flex: 1;
+                    min-width: 0;
+                    padding: 6px 8px;
+                    font-size: 0.85em;
+                }
+                .orient-actions .btn.orient-correct   { background-color: #4CAF50; }
+                .orient-actions .btn.orient-needs_fix { background-color: #FF6700; }
+                .orient-actions .btn.orient-unsure    { background-color: #607d8b; }
+                .orient-status-line {
+                    font-size: 0.75em;
+                    color: var(--accent-color);
+                    min-height: 1em;
+                }
+            </style>
+
             <div id="config-view" style="display: none; flex-direction: column; padding: 20px; overflow-y: auto; flex: 1 1 0; min-height: 0;">
                 <div class="tl-section">
                     <h2>Camera Configuration</h2>
@@ -643,6 +818,17 @@
                         <input type="text" id="config-global-params" placeholder="e.g. grayscale=1&brightness=1.2">
                         <p style="font-size: 0.75em; color: #9ab; margin-top: 5px;">
                             Comma-separated or ampersand-separated key=value pairs.
+                        </p>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                        <label>Remote Access Shared Secret</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="password" id="config-remote-secret" placeholder="Enter shared secret for remote Roku access" style="flex: 1;">
+                            <button class="btn" id="btn-toggle-secret" style="padding: 6px 10px; font-size: 0.8em; min-width: 60px;">Show</button>
+                        </div>
+                        <p style="font-size: 0.75em; color: #9ab; margin-top: 5px;">
+                            Shared secret for remote Roku access via ?auth= query parameter. Leave empty to disable.
                         </p>
                     </div>
 
@@ -788,6 +974,12 @@
             // Geotags
             geotagsInitialized: false,
             geotagThumbVersion: Date.now(),
+            // Orientation review
+            orientFilter: 'unreviewed',
+            orientOffset: 0,
+            orientLimit: 50,
+            orientTotal: 0,
+            orientLoading: false,
         };
 
         // DOM Elements
@@ -863,6 +1055,17 @@
             statComplete: document.getElementById('stat-complete'),
             statMissing: document.getElementById('stat-missing'),
             statSuggested: document.getElementById('stat-suggested'),
+            // Orientation
+            orientationView: document.getElementById('orientation-view'),
+            orientFilter: document.getElementById('orient-filter'),
+            orientGrid: document.getElementById('orient-grid'),
+            orientStatus: document.getElementById('orient-status'),
+            orientLoadMore: document.getElementById('orient-load-more'),
+            orientApplyAllBtn: document.getElementById('orient-apply-all-btn'),
+            // Duplicates
+            duplicatesView: document.getElementById('duplicates-view'),
+            dupGrid: document.getElementById('dup-grid'),
+            dupStatus: document.getElementById('dup-status'),
             // Config
             configView: document.getElementById('config-view'),
             configCameraList: document.getElementById('config-camera-list'),
@@ -873,6 +1076,8 @@
             configGlobalThreshold: document.getElementById('config-global-threshold'),
             configGlobalThresholdVal: document.getElementById('config-threshold-val'),
             configGlobalParams: document.getElementById('config-global-params'),
+            configRemoteSecret: document.getElementById('config-remote-secret'),
+            btnToggleSecret: document.getElementById('btn-toggle-secret'),
             configGlobalStatus: document.getElementById('global-settings-status'),
             libUploadInput: document.getElementById('lib-upload-input'),
             libUploadBtn: document.getElementById('btn-upload-photos'),
@@ -912,6 +1117,8 @@
             els.timelapseView.style.display = tab === 'timelapse' ? 'block' : 'none';
             els.geotagsView.style.display = tab === 'geotags' ? 'flex' : 'none';
             els.libraryView.style.display = tab === 'library' ? 'block' : 'none';
+            els.orientationView.style.display = tab === 'orientation' ? 'block' : 'none';
+            els.duplicatesView.style.display = tab === 'duplicates' ? 'block' : 'none';
             els.configView.style.display = tab === 'config' ? 'block' : 'none';
 
             renderSidebar();
@@ -935,6 +1142,10 @@
                 else if (state.camNames.length) selectCamera(state.camNames[0], 'timelapse');
             } else if (tab === 'library') {
                 loadLibrary();
+            } else if (tab === 'orientation') {
+                loadOrientation(true);
+            } else if (tab === 'duplicates') {
+                loadDuplicates();
             } else if (tab === 'config') {
                 loadCameraConfig();
             }
@@ -1173,6 +1384,7 @@
             const sendPtz = (action) => {
                 if (!state.activeCam) return;
                 fetch(`/camera/${state.activeCam}/ptz`, {
+                    credentials: 'same-origin',
                     method: 'POST',
                     body: JSON.stringify({ action: action, direction: btn.dataset.dir, speed: 1.0 })
                 });
@@ -1197,7 +1409,7 @@
 
             // Load capture config for this camera
             try {
-                const cfgRes = await fetch(`/timelapse/config?camera=${state.activeCam}`);
+                const cfgRes = await fetch(`/timelapse/config?camera=${state.activeCam}`, {credentials: 'same-origin'});
                 if (cfgRes.ok) {
                     const cfg = await cfgRes.json();
                     els.tlCaptureEnabled.checked = cfg.enabled || false;
@@ -1221,8 +1433,8 @@
             let summary = [], videos = [];
             try {
                 const [summaryRes, videosRes] = await Promise.all([
-                    fetch('/timelapse/summary'),
-                    fetch('/timelapse/videos')
+                    fetch('/timelapse/summary', {credentials: 'same-origin'}),
+                    fetch('/timelapse/videos', {credentials: 'same-origin'})
                 ]);
                 if (summaryRes.ok) summary = await summaryRes.json();
                 if (videosRes.ok) videos = await videosRes.json();
@@ -1258,6 +1470,7 @@
                 els.tlCaptureStatus.className = 'status';
                 try {
                     const res = await fetch('/timelapse/config', {
+                        credentials: 'same-origin',
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ camera: state.activeCam, enabled, interval })
@@ -1295,7 +1508,7 @@
             // Fetch actual frame list from server
             let allFrames = [];
             try {
-                const res = await fetch(`/timelapse/frames?camera=${encodeURIComponent(state.activeCam)}`);
+                const res = await fetch(`/timelapse/frames?camera=${encodeURIComponent(state.activeCam)}`, {credentials: 'same-origin'});
                 if (res.ok) allFrames = await res.json();
             } catch(e) { console.error('Failed to fetch frame list:', e); }
 
@@ -1392,6 +1605,7 @@
 
             try {
                 const res = await fetch('/timelapse/generate', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -1410,7 +1624,7 @@
                 els.tlGenerateStatus.textContent = 'Video generated successfully!';
                 setTimeout(() => { els.tlGenerateStatus.style.display = 'none'; }, 3000);
                 // Refresh video list
-                const videosRes = await fetch('/timelapse/videos');
+                const videosRes = await fetch('/timelapse/videos', {credentials: 'same-origin'});
                 renderVideoList(await videosRes.json());
             } catch(e) {
                 els.tlGenerateStatus.textContent = 'Error generating video: ' + e.message;
@@ -1515,6 +1729,7 @@
                 rotateBtn.disabled = true;
                 try {
                     const res = await fetch('/library/rotate', {
+                        credentials: 'same-origin',
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({file})
@@ -1551,6 +1766,7 @@
             els.libConfirmModal.style.display = 'none';
             try {
                 const res = await fetch('/library/delete', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({file})
@@ -1583,6 +1799,7 @@
 
             try {
                 const res = await fetch('/camera/library/upload', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     body: formData
                 });
@@ -1721,7 +1938,7 @@
             const frontImg = state.ssFront === 'a' ? els.ssImgA : els.ssImgB;
 
             try {
-                const resp = await fetch(url);
+                const resp = await fetch(url, {credentials: 'same-origin'});
                 const photoInfo = resp.headers.get('X-Photo-Info');
                 els.ssPhotoInfo.textContent = photoInfo || '';
                 const blob = await resp.blob();
@@ -1761,7 +1978,7 @@
 
         async function fetchTickerData() {
             try {
-                const res = await fetch(`/ticker?t=${Date.now()}`);
+                const res = await fetch(`/ticker?t=${Date.now()}`, {credentials: 'same-origin'});
                 if (res.ok) {
                     const data = await res.json();
                     if (data.items && data.items.length > 0) {
@@ -1856,8 +2073,8 @@
         async function loadCameraConfig() {
             try {
                 const [camRes, settingsRes] = await Promise.all([
-                    fetch('/camera/config'),
-                    fetch('/camera/settings')
+                    fetch('/camera/config', {credentials: 'same-origin'}),
+                    fetch('/camera/settings', {credentials: 'same-origin'})
                 ]);
                 
                 if (!camRes.ok) throw new Error(camRes.status);
@@ -1875,10 +2092,12 @@
                     els.configGlobalThreshold.value = Math.round(thresh * 100);
                     els.configGlobalThresholdVal.textContent = Math.round(thresh * 100);
                     
+                    els.configRemoteSecret.value = _globalSettings.remote_auth_secret || '';
+
                     // Reconstruct extra params string from other keys
                     const extra = [];
                     for (const k in _globalSettings) {
-                        if (!['noexif', 'w', 'h', 'fit', 'crop_threshold'].includes(k)) {
+                        if (!['noexif', 'w', 'h', 'fit', 'crop_threshold', 'remote_auth_secret'].includes(k)) {
                             extra.push(`${k}=${_globalSettings[k]}`);
                         }
                     }
@@ -1899,6 +2118,12 @@
             els.configGlobalThresholdVal.textContent = els.configGlobalThreshold.value;
         };
 
+        els.btnToggleSecret.onclick = () => {
+            const inp = els.configRemoteSecret;
+            if (inp.type === 'password') { inp.type = 'text'; els.btnToggleSecret.textContent = 'Hide'; }
+            else { inp.type = 'password'; els.btnToggleSecret.textContent = 'Show'; }
+        };
+
         document.getElementById('btn-save-global-settings').onclick = async () => {
             const btn = document.getElementById('btn-save-global-settings');
             btn.disabled = true;
@@ -1911,6 +2136,7 @@
             };
             if (els.configGlobalWidth.value) settings.w = els.configGlobalWidth.value;
             if (els.configGlobalHeight.value) settings.h = els.configGlobalHeight.value;
+            settings.remote_auth_secret = els.configRemoteSecret.value.trim();
 
             const extraStr = els.configGlobalParams.value.trim();
             if (extraStr) {
@@ -1923,6 +2149,7 @@
 
             try {
                 const res = await fetch('/camera/settings', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)
@@ -2028,6 +2255,7 @@
         async function saveCameraConfig() {
             try {
                 const res = await fetch('/camera/config', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(_camConfig)
@@ -2083,6 +2311,320 @@
         let geotagSelectedFiles = new Set();
         let geotagSuggestions = [];
         let geotagMapClickEnabled = false;
+
+        // --- Orientation Review ---
+        async function loadOrientationCounts() {
+            try {
+                const res = await fetch('/orientation/counts', {credentials: 'same-origin'});
+                if (!res.ok) return;
+                const counts = await res.json();
+                ['unreviewed','correct','needs_fix','unsure'].forEach(k => {
+                    const el = document.querySelector(`#orient-controls [data-count="${k}"]`);
+                    if (el) el.textContent = counts[k] ?? 0;
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        function orientCardHTML(photo) {
+            const name = photo.filename;
+            const encName = encodeURIComponent(name);
+            const status = photo.review_status || 'unreviewed';
+            return `
+                <div class="orient-card status-${status}" data-filename="${name}">
+                    <div class="orient-thumbs">
+                        <div>
+                            <span class="orient-label">Raw</span>
+                            <img loading="lazy" src="/orientation/thumbnail?name=${encName}&mode=raw" alt="raw">
+                        </div>
+                        <div>
+                            <span class="orient-label">Rendered</span>
+                            <img loading="lazy" src="/orientation/thumbnail?name=${encName}&mode=rendered" alt="rendered">
+                        </div>
+                    </div>
+                    <div class="orient-filename" title="${name}">${name}</div>
+                    <div class="orient-actions">
+                        <button class="btn orient-correct"   data-status="correct">Correct</button>
+                        <button class="btn orient-needs_fix" data-status="needs_fix">Needs Fix</button>
+                        <button class="btn orient-unsure"    data-status="unsure">Unsure</button>
+                    </div>
+                    ${status === 'needs_fix' ? `<button class="btn orient-apply-fix" style="background:#e65100; margin-top:4px; width:100%;">Apply Fix — Rotate Raw to Match Rendered</button>` : ''}
+                    <div class="orient-status-line">Status: ${status}</div>
+                </div>`;
+        }
+
+        async function loadOrientation(reset) {
+            if (state.orientLoading) return;
+            state.orientLoading = true;
+            if (reset) {
+                state.orientOffset = 0;
+                els.orientGrid.innerHTML = '';
+                els.orientLoadMore.style.display = 'none';
+            }
+            els.orientStatus.textContent = 'Loading...';
+
+            await loadOrientationCounts();
+
+            const filter = state.orientFilter;
+            const url = `/orientation/photos?filter=${encodeURIComponent(filter)}&limit=${state.orientLimit}&offset=${state.orientOffset}`;
+            try {
+                const res = await fetch(url, {credentials: 'same-origin'});
+                if (!res.ok) throw new Error(res.status);
+                const body = await res.json();
+                state.orientTotal = body.total || 0;
+                const photos = body.photos || [];
+
+                if (state.orientOffset === 0 && photos.length === 0) {
+                    els.orientStatus.textContent = `No photos match filter "${filter}".`;
+                } else {
+                    els.orientStatus.textContent =
+                        `Showing ${Math.min(state.orientOffset + photos.length, state.orientTotal)} of ${state.orientTotal}`;
+                }
+
+                const frag = document.createDocumentFragment();
+                photos.forEach(p => {
+                    const div = document.createElement('div');
+                    div.innerHTML = orientCardHTML(p).trim();
+                    frag.appendChild(div.firstChild);
+                });
+                els.orientGrid.appendChild(frag);
+
+                state.orientOffset += photos.length;
+                const more = state.orientOffset < state.orientTotal;
+                els.orientLoadMore.style.display = more ? 'inline-block' : 'none';
+                els.orientApplyAllBtn.style.display =
+                    (filter === 'needs_fix' && state.orientTotal > 0) ? 'inline-block' : 'none';
+            } catch (e) {
+                els.orientStatus.textContent = 'Failed to load orientation photos: ' + e.message;
+            } finally {
+                state.orientLoading = false;
+            }
+        }
+
+        async function submitOrientationReview(filename, status, cardEl) {
+            const line = cardEl.querySelector('.orient-status-line');
+            if (line) line.textContent = 'Saving...';
+            try {
+                const res = await fetch('/orientation/review', {
+                    credentials: 'same-origin',
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename, status}),
+                });
+                if (!res.ok) throw new Error(res.status);
+                const body = await res.json();
+                cardEl.classList.remove('status-unreviewed', 'status-correct',
+                                        'status-needs_fix', 'status-unsure');
+                cardEl.classList.add('status-' + body.status);
+                if (line) line.textContent = 'Status: ' + body.status;
+
+                const existingFix = cardEl.querySelector('.orient-apply-fix');
+                if (body.status === 'needs_fix' && !existingFix) {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn orient-apply-fix';
+                    btn.style.cssText = 'background:#e65100; margin-top:4px; width:100%;';
+                    btn.textContent = 'Apply Fix — Rotate Raw to Match Rendered';
+                    line.parentNode.insertBefore(btn, line);
+                } else if (body.status !== 'needs_fix' && existingFix) {
+                    existingFix.remove();
+                }
+
+                // Refresh counts.
+                loadOrientationCounts();
+
+                // If the current filter excludes this new status, fade/remove the card.
+                const f = state.orientFilter;
+                if (f !== 'all' && f !== body.status) {
+                    cardEl.style.transition = 'opacity 0.25s';
+                    cardEl.style.opacity = '0';
+                    setTimeout(() => cardEl.remove(), 260);
+                }
+            } catch (e) {
+                if (line) line.textContent = 'Save failed: ' + e.message;
+            }
+        }
+
+        // Wire orientation UI once (listeners attach regardless of tab).
+        els.orientFilter.addEventListener('change', () => {
+            state.orientFilter = els.orientFilter.value;
+            loadOrientation(true);
+        });
+        els.orientLoadMore.addEventListener('click', () => loadOrientation(false));
+        els.orientApplyAllBtn.addEventListener('click', async () => {
+            const count = state.orientTotal;
+            if (!confirm(`This will permanently rotate ${count} image(s) so the raw pixel data matches the rendered (EXIF-corrected) orientation.\n\nThis cannot be undone.\n\nContinue?`)) return;
+            els.orientApplyAllBtn.disabled = true;
+            els.orientApplyAllBtn.textContent = `Applying fixes (${count} images)...`;
+            try {
+                const res = await fetch('/orientation/apply-all', {
+                    credentials: 'same-origin',
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{}',
+                });
+                if (!res.ok) throw new Error(res.status);
+                const body = await res.json();
+                els.orientApplyAllBtn.textContent = `Done: ${body.fixed} fixed, ${body.skipped} already OK, ${body.failed} failed`;
+                setTimeout(() => loadOrientation(true), 1500);
+            } catch (e) {
+                els.orientApplyAllBtn.textContent = 'Apply Fix to All (failed: ' + e.message + ')';
+            } finally {
+                els.orientApplyAllBtn.disabled = false;
+            }
+        });
+        els.orientGrid.addEventListener('click', e => {
+            const fixBtn = e.target.closest('.orient-apply-fix');
+            if (fixBtn) {
+                const card = fixBtn.closest('.orient-card');
+                if (!card) return;
+                const filename = card.dataset.filename;
+                if (!confirm(`This will permanently rotate the raw image "${filename}" to match the rendered orientation.\n\nThe original pixel data will be overwritten. This cannot be undone.\n\nContinue?`)) return;
+                applyOrientationFix(filename, card, fixBtn);
+                return;
+            }
+            const btn = e.target.closest('.orient-actions .btn');
+            if (!btn) return;
+            const card = btn.closest('.orient-card');
+            if (!card) return;
+            const filename = card.dataset.filename;
+            const status = btn.dataset.status;
+            submitOrientationReview(filename, status, card);
+        });
+
+        async function applyOrientationFix(filename, cardEl, btn) {
+            const line = cardEl.querySelector('.orient-status-line');
+            btn.disabled = true;
+            btn.textContent = 'Applying...';
+            if (line) line.textContent = 'Rotating image...';
+            try {
+                const res = await fetch('/orientation/apply-fix', {
+                    credentials: 'same-origin',
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename}),
+                });
+                if (!res.ok) throw new Error(res.status);
+                const body = await res.json();
+                if (body.skipped) {
+                    if (line) line.textContent = body.message;
+                } else {
+                    if (line) line.textContent = 'Status: correct (fixed)';
+                }
+                cardEl.classList.remove('status-needs_fix');
+                cardEl.classList.add('status-correct');
+                btn.remove();
+                const imgs = cardEl.querySelectorAll('.orient-thumbs img');
+                const ts = Date.now();
+                imgs.forEach(img => {
+                    const src = img.src.split('&_t=')[0];
+                    img.src = src + '&_t=' + ts;
+                });
+                loadOrientationCounts();
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Apply Fix — Rotate Raw to Match Rendered';
+                if (line) line.textContent = 'Fix failed: ' + e.message;
+            }
+        }
+
+        // --- Duplicates ---
+        async function loadDuplicates() {
+            els.dupStatus.textContent = 'Loading duplicate groups...';
+            els.dupGrid.innerHTML = '';
+            try {
+                const res = await fetch('/duplicates/groups', {credentials: 'same-origin'});
+                if (!res.ok) throw new Error(res.status);
+                const body = await res.json();
+                const groups = body.groups || [];
+                if (groups.length === 0) {
+                    els.dupStatus.textContent = 'No duplicate groups found.';
+                    return;
+                }
+                els.dupStatus.textContent = `Found ${groups.length} duplicate group(s)`;
+                const frag = document.createDocumentFragment();
+                groups.forEach(g => {
+                    const div = document.createElement('div');
+                    div.innerHTML = dupGroupHTML(g).trim();
+                    frag.appendChild(div.firstChild);
+                });
+                els.dupGrid.appendChild(frag);
+            } catch (e) {
+                els.dupStatus.textContent = 'Failed to load duplicates: ' + e.message;
+            }
+        }
+
+        function dupGroupHTML(group) {
+            const photos = group.photos || [];
+            const photoCards = photos.map(p => `
+                <div class="dup-photo-card" data-photo-id="${p.photo_id}">
+                    <img src="/photo/${encodeURIComponent(p.filename)}" loading="lazy">
+                    <div class="dup-photo-filename">${p.filename}</div>
+                    <div class="dup-photo-info">
+                        ${p.resolution} (${p.megapixels} MP)<br>
+                        ${(p.file_size / 1024 / 1024).toFixed(2)} MB
+                    </div>
+                </div>
+            `).join('');
+            return `
+                <div class="dup-group" data-group-id="${group.group_id}">
+                    <div class="dup-group-header">
+                        Duplicate Group #${group.group_id} — ${photos.length} photos
+                    </div>
+                    <div class="dup-photos">
+                        ${photoCards}
+                    </div>
+                    <div class="dup-group-actions">
+                        <button class="btn dup-keep-btn" style="background:#4CAF50;">Keep Selected & Delete Others</button>
+                        <button class="btn" onclick="this.closest('.dup-group').remove()">Skip for Now</button>
+                    </div>
+                </div>`;
+        }
+
+        els.dupGrid.addEventListener('click', e => {
+            const card = e.target.closest('.dup-photo-card');
+            if (card) {
+                const group = card.closest('.dup-group');
+                group.querySelectorAll('.dup-photo-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                return;
+            }
+            const keepBtn = e.target.closest('.dup-keep-btn');
+            if (keepBtn) {
+                const group = keepBtn.closest('.dup-group');
+                const selected = group.querySelector('.dup-photo-card.selected');
+                if (!selected) {
+                    alert('Please select one photo to keep.');
+                    return;
+                }
+                const groupId = parseInt(group.dataset.groupId);
+                const keptId = parseInt(selected.dataset.photoId);
+                const allCards = Array.from(group.querySelectorAll('.dup-photo-card'));
+                const deletedIds = allCards.filter(c => c !== selected).map(c => parseInt(c.dataset.photoId));
+                const deletedNames = allCards.filter(c => c !== selected).map(c => c.querySelector('.dup-photo-filename').textContent);
+                if (!confirm(`Keep: ${selected.querySelector('.dup-photo-filename').textContent}\n\nDelete:\n${deletedNames.join('\n')}\n\nThis cannot be undone. Continue?`)) return;
+                resolveDuplicateGroup(groupId, keptId, deletedIds, group);
+            }
+        });
+
+        async function resolveDuplicateGroup(groupId, keptId, deletedIds, groupEl) {
+            const keepBtn = groupEl.querySelector('.dup-keep-btn');
+            keepBtn.disabled = true;
+            keepBtn.textContent = 'Deleting...';
+            try {
+                const res = await fetch('/duplicates/resolve', {
+                    credentials: 'same-origin',
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({group_id: groupId, kept_photo_id: keptId, deleted_photo_ids: deletedIds}),
+                });
+                if (!res.ok) throw new Error(res.status);
+                groupEl.style.transition = 'opacity 0.3s';
+                groupEl.style.opacity = '0';
+                setTimeout(() => groupEl.remove(), 320);
+            } catch (e) {
+                keepBtn.disabled = false;
+                keepBtn.textContent = 'Keep Selected & Delete Others (failed: ' + e.message + ')';
+            }
+        }
 
         async function initGeotags() {
             state.geotagsInitialized = true;
@@ -2148,7 +2690,7 @@
         async function loadGeotagPhotos(status = 'all') {
             try {
                 state.geotagThumbVersion = Date.now();
-                const response = await fetch(`/photos/geotags?status=${status}`);
+                const response = await fetch(`/photos/geotags?status=${status}`, {credentials: 'same-origin'});
                 const data = await response.json();
 
                 geotagPhotos = data.photos;
@@ -2171,8 +2713,8 @@
         async function updateGeotagStats() {
             try {
                 const [completeResp, missingResp] = await Promise.all([
-                    fetch('/photos/geotags?status=complete'),
-                    fetch('/photos/geotags?status=missing')
+                    fetch('/photos/geotags?status=complete', {credentials: 'same-origin'}),
+                    fetch('/photos/geotags?status=missing', {credentials: 'same-origin'})
                 ]);
 
                 const completeData = await completeResp.json();
@@ -2463,6 +3005,7 @@
                 if (locationName) geotag.location_name = locationName;
 
                 const response = await fetch('/photos/geotag/batch-update', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2511,6 +3054,7 @@
                 if (!confirm(`Found: ${result.display_name}\n\nApply to ${filenames.length} photos from ${dateLabel}?`)) return;
 
                 const resp = await fetch('/photos/geotag/batch-update', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2560,6 +3104,7 @@
                 if (!confirm(`Found: ${result.display_name}\n\nApply to ${filename}?`)) return;
 
                 const resp = await fetch('/photos/geotag/batch-update', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2640,6 +3185,7 @@
 
             try {
                 const response = await fetch('/photos/geotag/auto-infer', {
+                    credentials: 'same-origin',
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({time_window: 3600})

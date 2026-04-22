@@ -24,18 +24,11 @@ sub init()
     m.tickerItems = []
     m.tickerIdx = 0
 
-    m.DEFAULT_USERNAME = ""
-    m.DEFAULT_PASSWORD = ""
 
     ' Read saved settings from registry
     sec = CreateObject("roRegistrySection", "settings")
     m.SERVER_URL = sec.Read("serverUrl")
     if m.SERVER_URL = invalid or m.SERVER_URL = "" then m.SERVER_URL = m.DEFAULT_SERVER_URL
-    m.USERNAME = sec.Read("username")
-    if m.USERNAME = invalid or m.USERNAME = "" then m.USERNAME = m.DEFAULT_USERNAME
-    m.PASSWORD = sec.Read("password")
-    if m.PASSWORD = invalid or m.PASSWORD = "" then m.PASSWORD = m.DEFAULT_PASSWORD
-
     ' Read screensaver mode from registry
     m.mode = sec.Read("mode")
     if m.mode <> "camera" and m.mode <> "video" then m.mode = "photo"
@@ -55,9 +48,9 @@ sub init()
     dataSec = sec.Read("dataInterval")
     if dataSec <> "" then m.DATA_SEC = val(dataSec) else m.DATA_SEC = 120
 
-    ' Clock style: "bounce" (default) or "fade"
+    ' Clock style: "bounce" (default), "fade", or "off"
     m.clockStyle = sec.Read("clockStyle")
-    if m.clockStyle <> "fade" then m.clockStyle = "bounce"
+    if m.clockStyle <> "fade" and m.clockStyle <> "off" then m.clockStyle = "bounce"
 
     ' Clock opacity: 0 = fully opaque, 99 = nearly invisible. Default 40.
     opacityStr = sec.Read("clockOpacity")
@@ -144,8 +137,8 @@ sub init()
 
     m.clockTimer = m.top.findNode("clockTimer")
     m.clockTimer.observeField("fire", "onClockTimer")
-    m.clockTimer.control = "start"
-    
+    if m.clockStyle <> "off" then m.clockTimer.control = "start"
+
     m.dataTimer = m.top.findNode("dataTimer")
     ' In bounce mode, rotate ticker every 15s. In fade mode, rotation is driven by fade cycle.
     if m.clockStyle = "fade"
@@ -154,11 +147,11 @@ sub init()
         m.dataTimer.duration = 15
     end if
     m.dataTimer.observeField("fire", "onDataTimer")
-    m.dataTimer.control = "start"
+    if m.clockStyle <> "off" then m.dataTimer.control = "start"
 
     m.tickerRefreshTimer = m.top.findNode("tickerRefreshTimer")
     m.tickerRefreshTimer.observeField("fire", "onTickerRefresh")
-    m.tickerRefreshTimer.control = "start"
+    if m.clockStyle <> "off" then m.tickerRefreshTimer.control = "start"
     
     m.bounceTimer = m.top.findNode("bounceTimer")
     m.bounceTimer.observeField("fire", "onBounce")
@@ -173,7 +166,9 @@ sub init()
     m.fadeStableTimer.observeField("fire", "onFadeStableTimer")
 
     ' Apply overlay opacity and start appropriate clock style
-    if m.clockStyle = "fade"
+    if m.clockStyle = "off"
+        m.overlay.visible = false
+    else if m.clockStyle = "fade"
         m.overlay.opacity = 0.0
         startFadeCycle()
     else
@@ -195,9 +190,9 @@ sub init()
     end if
 
     ' Initial render
-    updateClock()
+    if m.clockStyle <> "off" then updateClock()
     loadNextImage() ' Load the first image
-    fetchTickerData()
+    if m.clockStyle <> "off" then fetchTickerData()
 end sub
 
 ' -- Image loading --
@@ -206,11 +201,11 @@ sub loadNextImage()
     ts = CreateObject("roDateTime")
     if m.mode = "camera"
         if m.cycleMode and m.cameraList.count() = 0 then return
-        url = m.SERVER_URL + "/camera/" + m.cameraName + "?t=" + ts.asSeconds().toStr()
+        url = buildUrl(m.SERVER_URL, "/camera/" + m.cameraName + "?t=" + ts.asSeconds().toStr())
         m.photoB.uri = url
     else
         ' Use HttpTask to download image to tmp:/ so we can read X-Photo-Info header
-        url = m.SERVER_URL + "/random?noexif=1&w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr()
+        url = buildUrl(m.SERVER_URL, "/random?noexif=1&w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr())
 
         ' Unique filename each time to bust Poster URI cache
         tmpFile = "tmp:/photo_" + m.photoFileCounter.toStr()
@@ -224,8 +219,7 @@ sub loadNextImage()
         task.observeField("response", "onPhotoFetchResponse")
         task.request = {
             url: url,
-            toFile: tmpFile,
-            auth: { username: m.USERNAME, password: m.PASSWORD }
+            toFile: tmpFile
         }
         task.control = "run"
         m.photoFetchTask = task
@@ -325,10 +319,10 @@ end sub
 
 sub fetchCameraList()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/camera/list?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/camera/list?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onCameraListResponse")
-    task.request = { url: url, auth: { username: m.USERNAME, password: m.PASSWORD } }
+    task.request = { url: url }
     task.control = "run"
     m.cameraListTask = task
 end sub
@@ -396,13 +390,10 @@ end sub
 
 sub fetchTickerData()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/ticker?t=" + ts.asSeconds().toStr()
+    url = buildUrl(m.SERVER_URL, "/ticker?t=" + ts.asSeconds().toStr())
     task = CreateObject("roSGNode", "HttpTask")
     task.observeField("response", "onTickerDataResponse")
-    task.request = {
-        url: url,
-        auth: { username: m.USERNAME, password: m.PASSWORD }
-    }
+    task.request = { url: url }
     task.control = "run"
     m.tickerTask = task
 end sub
@@ -426,7 +417,7 @@ sub showNextTickerItem()
         ' Collect 3 camera images using circular queue over image items
         ts = CreateObject("roDateTime")
         imageUrls = []
-        imageUrls.push(m.SERVER_URL + item.url + "&t=" + ts.asSeconds().toStr())
+        imageUrls.push(buildUrl(m.SERVER_URL, item.url + "&t=" + ts.asSeconds().toStr()))
 
         ' Gather 2 more images, wrapping around if needed
         scanIdx = m.tickerIdx
@@ -436,7 +427,7 @@ sub showNextTickerItem()
             scanIdx = (scanIdx + 1) mod m.tickerItems.count()
             scanned = scanned + 1
             if scanItem.type = "image" and scanItem.url <> invalid and scanItem.url <> ""
-                imageUrls.push(m.SERVER_URL + scanItem.url + "&t=" + ts.asSeconds().toStr())
+                imageUrls.push(buildUrl(m.SERVER_URL, scanItem.url + "&t=" + ts.asSeconds().toStr()))
                 m.tickerIdx = scanIdx
             end if
         end while

@@ -69,5 +69,6 @@
     <Timer id="previewTimer" repeat="true" duration="1" />
   </children>
 
+  <script type="text/brightscript" uri="pkg:/source/Utils.brs" />
   <script type="text/brightscript" uri="MainScene.brs" />
 </component>

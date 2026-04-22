@@ -87,5 +87,6 @@
     <Timer id="tickerRefreshTimer" repeat="true" duration="120" />
   </children>
 
+  <script type="text/brightscript" uri="pkg:/source/Utils.brs" />
   <script type="text/brightscript" uri="ScreensaverScene.brs" />
 </component>

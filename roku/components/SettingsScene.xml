@@ -30,6 +30,19 @@
         </Group>
         <Button id="editUrlBtn" text="Edit Server URL" focusable="true" />
 
+        <!-- Auth Secret (optional, for remote/reverse-proxy access) -->
+        <Label text="Auth Secret (optional):" color="#AAAAAA">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+        </Label>
+        <Group>
+          <Rectangle id="authBg" width="700" height="44" color="#FFFFFF15" />
+          <Label id="authLabel" text="" color="#FFFFFF"
+                 translation="[12,10]" width="676">
+            <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
+          </Label>
+        </Group>
+        <Button id="editAuthBtn" text="Edit Auth Secret" focusable="true" />
+
         <!-- Login -->
         <Label text="Authentication:" color="#AAAAAA">
           <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="18" />
@@ -102,6 +115,7 @@
           <ContentNode role="content">
             <ContentNode title="Bounce (DVD-style)" />
             <ContentNode title="Fade (appear/disappear)" />
+            <ContentNode title="Off" />
           </ContentNode>
         </RadioButtonList>
 
@@ -132,5 +146,6 @@
     <!-- Keyboard dialog (created dynamically) -->
   </children>
 
+  <script type="text/brightscript" uri="pkg:/source/Utils.brs" />
   <script type="text/brightscript" uri="SettingsScene.brs" />
 </component>
