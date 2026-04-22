@@ -1,4 +1,4 @@
-# Debugging the Thingino Roku Viewer App
+# Debugging the 3 Bad Dogs Roku App
 
 This document outlines the process for debugging the Roku application using the provided `deploy.sh` script and the device's built-in debugging console.
 
@@ -51,7 +51,7 @@ If the app installs successfully but then freezes, crashes, or behaves unexpecte
 ### Capturing the Error
 
 1. Keep the `telnet` window open and visible.
-2. Launch the "Thingino Roku Viewer" app on your Roku.
+2. Launch the "3 Bad Dogs" app on your Roku.
 3. When the app crashes or freezes, switch back to your `telnet` window.
 4. The window will now contain the **full crash log**, including:
    - The exact error message (e.g., `Interface not a member of BrightScript Component`).

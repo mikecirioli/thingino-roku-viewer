@@ -229,17 +229,17 @@ services:
 
 ## What's Next
 
-### Phase 2: Web UI (Not Started)
-- Photo grid with geotag status indicators
-- Interactive map view with Leaflet.js
+### Phase 2: Web UI (Complete)
+The Geotags tab in the web UI now includes:
+- Photo grid with GPS status badges (green/red)
+- Interactive Leaflet.js map with photo pins
 - Click to edit geotags
-- Batch selection tools
-- Auto-inference approval workflow
+- Batch selection and editing tools
+- Auto-inference review workflow
 
-### Phase 3: Roku Display (Not Started)
-- World map overlay generation
-- Pin placement on photos
-- Location name display
+### Phase 3: Roku Display (Partial)
+- Roku screensaver displays "City, Country, DD-MM-YYYY" via X-Photo-Info response header
+- World map overlay with pin placement not yet implemented
 
 ## Files Created
 

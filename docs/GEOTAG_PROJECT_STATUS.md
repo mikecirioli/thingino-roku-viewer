@@ -1,7 +1,7 @@
 # Geotag Feature - Project Status & Roadmap
 
-**Last Updated:** 2026-04-06  
-**Status:** Phase 1 Complete ✅ | Phase 2 Not Started | Phase 3 Not Started
+**Last Updated:** 2026-04-21  
+**Status:** Phase 1 Complete | Phase 2 Complete | Phase 3 Partial
 
 ---
 
@@ -41,9 +41,9 @@ Add geographic location display to the Roku screensaver by:
 - Database can be rebuilt anytime - GPS data is safe in images
 
 ### Progress
-- ✅ **Phase 1 Complete:** Server API, EXIF read/write, temporal clustering, audit tools
-- ⏸️ **Phase 2 Not Started:** Web UI for geotag editing and review
-- ⏸️ **Phase 3 Not Started:** Roku screensaver map overlay
+- **Phase 1 Complete:** Server API, EXIF read/write, temporal clustering, audit tools
+- **Phase 2 Complete:** Web UI Geotags tab with Leaflet map, photo grid, batch editing, auto-inference review
+- **Phase 3 Partial:** Roku screensaver displays "City, Country, DD-MM-YYYY" via X-Photo-Info header. World map overlay not yet implemented.
 
 ---
 
