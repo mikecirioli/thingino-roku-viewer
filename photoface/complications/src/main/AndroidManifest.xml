@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required for Wear OS -->
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <!-- Health/Activity permissions -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+
+    <!-- Location for sunrise/sunset calculations -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_app"
+        android:label="@string/app_name"
+        android:supportsRtl="true">
+
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- FLOORS CLIMBED COMPLICATION -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <service
+            android:name=".floors.FloorsComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_floors"
+            android:label="@string/floors_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,RANGED_VALUE,LONG_TEXT" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="300" />
+        </service>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- SUNRISE/SUNSET COMPLICATION -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <service
+            android:name=".sunrise.SunriseComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_sunrise"
+            android:label="@string/sunrise_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="900" />
+        </service>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- MOON PHASE COMPLICATION (IMAGE) -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <service
+            android:name=".moon.MoonPhaseComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_moon"
+            android:label="@string/moon_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SMALL_IMAGE" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="21600" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.PROVIDER_CONFIG_ACTION"
+                android:value="com.photoface.complications.ACTION_MOON_PHASE_CONFIG" />
+        </service>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- MOON PHASE COMPLICATION (TEXT) -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <service
+            android:name=".moon.MoonTextComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_moon"
+            android:label="@string/moon_text_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="21600" />
+        </service>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- WORLD CLOCK COMPLICATION -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <service
+            android:name=".worldclock.WorldClockComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_world_clock"
+            android:label="@string/worldclock_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="60" />
+
+            <meta-data
+                android:name="android.support.wearable.complications.PROVIDER_CONFIG_ACTION"
+                android:value="com.photoface.complications.ACTION_WORLD_CLOCK_CONFIG" />
+        </service>
+
+        <!-- Moon Phase Configuration Activity -->
+        <activity
+            android:name=".moon.MoonPhaseConfigActivity"
+            android:exported="true"
+            android:label="@string/moon_config_label"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="com.photoface.complications.ACTION_MOON_PHASE_CONFIG" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.support.wearable.complications.category.PROVIDER_CONFIG" />
+            </intent-filter>
+        </activity>
+
+        <!-- World Clock Configuration Activity -->
+        <activity
+            android:name=".worldclock.WorldClockConfigActivity"
+            android:exported="true"
+            android:label="@string/worldclock_config_label"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="com.photoface.complications.ACTION_WORLD_CLOCK_CONFIG" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.support.wearable.complications.category.PROVIDER_CONFIG" />
+            </intent-filter>
+        </activity>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- PERMISSION / SETUP ACTIVITY -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".floors.PermissionActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

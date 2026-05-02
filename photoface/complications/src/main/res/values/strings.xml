@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhotoFace Complications</string>
+
+    <!-- Floors Complication -->
+    <string name="floors_label">Floors Climbed</string>
+    <string name="floors_description">%d floors climbed</string>
+
+    <!-- Sunrise/Sunset Complication -->
+    <string name="sunrise_label">Sunrise/Sunset</string>
+    <string name="sunrise_description">Sunrise and sunset times</string>
+
+    <!-- Moon Phase Complications -->
+    <string name="moon_label">Moon Phase</string>
+    <string name="moon_text_label">Moon Text</string>
+    <string name="moon_description">Current moon phase display</string>
+    <string name="moon_config_label">Moon Phase Settings</string>
+
+    <!-- World Clock Complication -->
+    <string name="worldclock_label">World Clock</string>
+    <string name="worldclock_description">Time in a selected timezone</string>
+    <string name="worldclock_config_label">World Clock Settings</string>
+
+    <!-- Permissions -->
+    <string name="permission_rationale">This app needs permissions to provide accurate health and location data for complications.</string>
+    <string name="grant_permission">Grant Permissions</string>
+</resources>

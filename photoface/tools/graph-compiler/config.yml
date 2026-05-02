@@ -1,0 +1,14 @@
+graphhopper:
+  graph.location: graph-cache
+  profiles:
+    - name: car
+      weighting: custom
+      custom_model:
+        speed:
+          - if: "true"
+            limit_to: "car_average_speed"
+          - if: "road_access == DESTINATION"
+            limit_to: "0"
+  graph.encoded_values: car_access, car_average_speed, max_speed, road_class, road_environment, surface, road_access
+  datareader.file: map.osm.pbf
+  import.osm.ignored_highways: footway, cycleway, path, pedestrian, steps

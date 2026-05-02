@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Background circle -->
+    <path
+        android:fillColor="#FF1A1A1A"
+        android:pathData="M48,48m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0"/>
+    <!-- Four colored dots representing complications -->
+    <!-- Top - Green (Floors) -->
+    <path
+        android:fillColor="#FF66BB6A"
+        android:pathData="M48,16m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"/>
+    <!-- Right - Orange (Sunrise) -->
+    <path
+        android:fillColor="#FFFFA726"
+        android:pathData="M72,48m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"/>
+    <!-- Bottom - Purple (Moon) -->
+    <path
+        android:fillColor="#FFBA68C8"
+        android:pathData="M48,72m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"/>
+    <!-- Left - Blue (Heart Rate) -->
+    <path
+        android:fillColor="#FF4FC3F7"
+        android:pathData="M24,48m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"/>
+    <!-- Center - White (Steps) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M48,48m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0"/>
+</vector>

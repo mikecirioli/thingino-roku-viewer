@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="150dp"
+    android:viewportWidth="16"
+    android:viewportHeight="150">
+    <!-- Dauphine style - diamond/pointed shape -->
+    <path
+        android:pathData="M8,0 L14,75 L8,150 L2,75 Z"
+        android:fillColor="#FFFFFF"/>
+    <!-- Center line accent -->
+    <path
+        android:pathData="M8,8 L8,142"
+        android:strokeColor="#CCCCCC"
+        android:strokeWidth="1"/>
+</vector>

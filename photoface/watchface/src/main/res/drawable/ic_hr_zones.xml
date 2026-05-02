@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Four colored bars showing zone colors -->
+    <path
+        android:fillColor="#FF66BB6A"
+        android:pathData="M2,6h4v12h-4z"/>
+    <path
+        android:fillColor="#FFFFEE58"
+        android:pathData="M7,6h4v12h-4z"/>
+    <path
+        android:fillColor="#FFFFA726"
+        android:pathData="M12,6h4v12h-4z"/>
+    <path
+        android:fillColor="#FFEF5350"
+        android:pathData="M17,6h5v12h-5z"/>
+</vector>

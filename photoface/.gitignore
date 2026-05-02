@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio
+*.iml
+.idea/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Local configuration
+local.properties
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Large binary assets and compiled data
+*.pbf
+*.gh.zip
+graph-cache/
+3dogproductions.png
+logo_3_bad_dogs.png
+

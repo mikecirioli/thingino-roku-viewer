@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="100dp"
+    android:viewportWidth="24"
+    android:viewportHeight="100">
+    <!-- Tapered hand - wide at base, pointed at tip -->
+    <path
+        android:pathData="M12,0 L14,100 L12,98 L10,100 Z"
+        android:fillColor="#FFFFFF"/>
+</vector>

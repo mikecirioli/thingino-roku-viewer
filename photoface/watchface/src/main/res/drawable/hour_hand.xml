@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="100dp"
+    android:viewportWidth="24"
+    android:viewportHeight="100">
+    <!-- Main hand body -->
+    <path
+        android:pathData="M12,0 L12,0 C17,0 20,5 20,12 L20,88 C20,95 17,100 12,100 C7,100 4,95 4,88 L4,12 C4,5 7,0 12,0 Z"
+        android:fillColor="#FFFFFF"/>
+    <!-- Center accent line -->
+    <path
+        android:pathData="M11,15 L13,15 L13,85 L11,85 Z"
+        android:fillColor="#CCCCCC"/>
+</vector>

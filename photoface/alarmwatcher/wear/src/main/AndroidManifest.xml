@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Watchman Bridge"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
+        
+        <meta-data
+            android:name="com.google.android.wearable.capabilities"
+            android:resource="@xml/wearable_capabilities" />
+
+        <service
+            android:name=".WatchListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/START_ALARM_SOUND" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/STOP_ALARM_SOUND" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/DND_SYNC" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/BEDTIME_SYNC" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/DND_OVERRIDE" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/ALARM_VOLUME" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/CRITICAL_ALERT" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/NEXT_ALARM" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/CUSTOM_SOUND" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/RULE_SOUND" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/VIBRATION_SYNC" />
+            </intent-filter>
+        </service>
+
+        <!-- Added NotificationListenerService to expose DND permissions on Samsung Wear OS -->
+        <service
+            android:name=".FakeNotificationListenerService"
+            android:label="Watchman DND Access"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".AlarmActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+        </activity>
+
+        <service
+            android:name=".AlarmComplicationService"
+            android:exported="true"
+            android:label="Phone Alarm"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
+    </application>
+
+</manifest>

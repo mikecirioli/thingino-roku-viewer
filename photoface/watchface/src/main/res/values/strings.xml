@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhotoFace</string>
+    <string name="bg_photo">Background Photo</string>
+
+    <!-- Complication slot names -->
+    <string name="complication_top">Top</string>
+    <string name="complication_left">Left</string>
+    <string name="complication_right">Right</string>
+    <string name="complication_bottom">Bottom</string>
+    <string name="complication_upper_left">Upper Left</string>
+
+    <!-- Color picker display names -->
+    <string name="battery_color">Battery Arc Color</string>
+    <string name="steps_color">Steps Arc Color</string>
+    <string name="date_color">Date Text Color</string>
+    <string name="heart_color">Heart Rate Arc Color</string>
+
+    <!-- Parallax strength options -->
+    <string name="parallax_strength">Photo Motion</string>
+    <string name="parallax_off">Off</string>
+    <string name="parallax_subtle">Subtle</string>
+    <string name="parallax_medium">Medium</string>
+    <string name="parallax_strong">Strong</string>
+
+    <!-- Hand style options -->
+    <string name="hand_style">Hand Style</string>
+    <string name="hand_classic">Classic</string>
+    <string name="hand_tapered">Tapered</string>
+    <string name="hand_dauphine">Dauphine</string>
+    <string name="hand_block">Block</string>
+
+    <!-- Hand color -->
+    <string name="hand_color">Hand Color</string>
+
+    <!-- Second hand options -->
+    <string name="second_hand">Second Hand</string>
+    <string name="second_hand_off">Off</string>
+    <string name="second_hand_on">On</string>
+    <string name="color_white">White</string>
+    <string name="color_silver">Silver</string>
+    <string name="color_gold">Gold</string>
+
+    <!-- Label size options -->
+    <string name="label_size">Label Size</string>
+    <string name="label_size_small">Small</string>
+    <string name="label_size_medium">Medium</string>
+    <string name="label_size_large">Large</string>
+    <string name="label_size_xlarge">X-Large</string>
+
+    <!-- Color option names -->
+    <string name="color_green">Green</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_red">Red</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_pink">Pink</string>
+
+    <!-- Quadrant widget selectors -->
+    <string name="quadrant_top_left">Top-Left Widget</string>
+    <string name="quadrant_top_right">Top-Right Widget</string>
+    <string name="quadrant_bottom_right">Bottom-Right Widget</string>
+    <string name="quadrant_bottom_left">Bottom-Left Widget</string>
+
+    <!-- Widget types -->
+    <string name="widget_battery">Battery</string>
+    <string name="widget_steps">Steps</string>
+    <string name="widget_heart">Heart Rate</string>
+    <string name="widget_date">Date</string>
+    <string name="widget_floors">Floors</string>
+    <string name="widget_none">None</string>
+
+    <!-- Sub-dial (center-top) widget -->
+    <string name="subdial_widget">Center-Top Widget</string>
+    <string name="subdial_color">Center-Top Color</string>
+    <string name="subdial_tap">Center-Top Tap</string>
+
+    <!-- Photo tint options -->
+    <string name="photo_tint">Photo Tint</string>
+    <string name="tint_none">None</string>
+    <string name="tint_light">Light</string>
+    <string name="tint_medium">Medium</string>
+    <string name="tint_heavy">Heavy</string>
+
+    <!-- Hour markers options -->
+    <string name="hour_markers">Hour Markers</string>
+    <string name="markers_none">None</string>
+    <string name="markers_four">4 Marks</string>
+    <string name="markers_twelve">12 Marks</string>
+
+    <!-- Arc thickness options -->
+    <string name="arc_thickness">Arc Thickness</string>
+    <string name="arc_thin">Thin</string>
+    <string name="arc_medium">Medium</string>
+    <string name="arc_thick">Thick</string>
+
+    <!-- Heart rate zone options -->
+    <string name="heart_zone">Heart Rate Zones</string>
+    <string name="zone_off">Off (static color)</string>
+    <string name="zone_relaxed">Relaxed (80/120/150)</string>
+    <string name="zone_standard">Standard (70/100/130)</string>
+    <string name="zone_athletic">Athletic (60/85/110)</string>
+
+    <!-- Tap action options -->
+    <string name="tap_top_left">Top-Left Tap</string>
+    <string name="tap_top_right">Top-Right Tap</string>
+    <string name="tap_bottom_right">Bottom-Right Tap</string>
+    <string name="tap_bottom_left">Bottom-Left Tap</string>
+    <string name="tap_none">None</string>
+    <string name="tap_battery">Battery</string>
+    <string name="tap_health">Health</string>
+    <string name="tap_calendar">Calendar</string>
+    <string name="tap_settings">Settings</string>
+    <string name="tap_phone">Phone</string>
+    <string name="tap_messages">Messages</string>
+    <string name="tap_music">Music</string>
+    <string name="tap_alarm">Alarm</string>
+
+    <!-- Complication colors -->
+    <string name="top_complication_color">Top Complication Color</string>
+    <string name="bottom_complication_color">Bottom Complication Color</string>
+
+    <!-- World clock options -->
+    <string name="world_clock">World Clock</string>
+    <string name="world_clock_timezone">Timezone</string>
+    <string name="world_clock_color">Clock Color</string>
+    <string name="tz_off">Off</string>
+    <string name="tz_london">London</string>
+    <string name="tz_paris">Paris</string>
+    <string name="tz_tokyo">Tokyo</string>
+    <string name="tz_sydney">Sydney</string>
+    <string name="tz_dubai">Dubai</string>
+    <string name="tz_mumbai">Mumbai</string>
+    <string name="tz_singapore">Singapore</string>
+    <string name="tz_hong_kong">Hong Kong</string>
+    <string name="tz_los_angeles">Los Angeles</string>
+    <string name="tz_new_york">New York</string>
+    <string name="tz_chicago">Chicago</string>
+    <string name="tz_denver">Denver</string>
+    <string name="tz_sao_paulo">São Paulo</string>
+    <string name="tz_berlin">Berlin</string>
+    <string name="tz_madrid">Madrid</string>
+    <string name="tz_moscow">Moscow</string>
+</resources>
